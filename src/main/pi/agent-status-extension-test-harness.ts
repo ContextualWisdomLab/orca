@@ -11,6 +11,8 @@ export type HookContext = {
   ui?: { setEditorText?: (text: string) => void }
   isIdle?: () => boolean
   model?: { provider?: unknown; id?: unknown } | null
+  modelRegistry?: { getAvailable: () => { provider: string; id: string }[] }
+  ui?: { notify: (message: string, level: string) => void }
   sessionManager?: {
     getSessionId?: () => unknown
     getSessionFile?: () => unknown
@@ -30,6 +32,8 @@ type FakeCurlChild = {
 }
 
 export type AgentStatusExtensionHarness = {
+  setModelMock: ReturnType<typeof vi.fn>
+  commands: Record<string, { handler: (args: string, context: HookContext) => Promise<void> }>
   killMock: ReturnType<typeof vi.fn>
   fetchMock: ReturnType<typeof vi.fn>
   spawnMock: ReturnType<typeof vi.fn>
@@ -118,7 +122,16 @@ export function createAgentStatusExtensionHarness(args: {
   }
 
   const module = {
-    exports: {} as { default?: (pi: { on: (name: string, handler: HookHandler) => void }) => void }
+    exports: {} as {
+      default?: (pi: {
+        on: (name: string, handler: HookHandler) => void
+        registerCommand: (
+          name: string,
+          command: { handler: (args: string, context: HookContext) => Promise<void> }
+        ) => void
+        setModel: (model: unknown) => Promise<boolean>
+      }) => void
+    }
   }
   const requireMock = vi.fn((specifier: string) => {
     if (specifier === 'fs') {
@@ -178,8 +191,14 @@ export function createAgentStatusExtensionHarness(args: {
   }
 
   const handlers: Record<string, HookHandler> = {}
+  const commands: AgentStatusExtensionHarness['commands'] = {}
+  const setModelMock = vi.fn(async (_model: unknown) => true)
   const registerInto = (target: Record<string, HookHandler>): void => {
     register({
+      registerCommand: (name, command) => {
+        commands[name] = command
+      },
+      setModel: setModelMock,
       on(name: string, handler: HookHandler) {
         target[name] = handler
       }
@@ -188,6 +207,8 @@ export function createAgentStatusExtensionHarness(args: {
   registerInto(handlers)
 
   return {
+    setModelMock,
+    commands,
     fetchMock,
     killMock,
     spawnMock,

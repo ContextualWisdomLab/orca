@@ -18,6 +18,9 @@ import { getPiAgentStatusWslCurlSourceLines } from './agent-status-wsl-curl-sour
 
 export const ORCA_PI_AGENT_STATUS_EXTENSION_FILE = 'orca-agent-status.ts'
 
+/** Source of the status extension installed into a Pi-family agent's extension
+ *  dir: it POSTs lifecycle, tool, and (under OMP) model events to Orca's hook
+ *  endpoint. Returned as one self-contained string — it runs inside the agent. */
 export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): string {
   // OMP resumes by id; its persistent file path lets native chat skip discovery.
   const sessionMetadataSourceLines =
@@ -42,10 +45,12 @@ export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): strin
           '  const sessionId = sessionManager?.getSessionId?.()',
           '  const sessionFile = sessionManager?.getSessionFile?.()',
           "  runtimeOmpSessionMetadata = typeof sessionId === 'string' && sessionId && typeof sessionFile === 'string' && sessionFile ? { session_id: sessionId, session_file: sessionFile } : {}",
+          '  trackModelSession(runtimeOmpSessionMetadata.session_id)',
+          '  updateModelMetadata(ctx)', 
           '}',
           '',
           'function getPostSessionMetadata(ompRuntime: boolean): Record<string, unknown> {',
-          '  return ompRuntime ? runtimeOmpSessionMetadata : sessionMetadata',
+          '  return ompRuntime ? { ...runtimeOmpSessionMetadata, ...modelMetadata } : sessionMetadata',
           '}',
           '',
           'function getPersistedSessionMetadata(): Record<string, unknown> {',
@@ -70,17 +75,49 @@ export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): strin
           '  const sessionId = sessionManager?.getSessionId?.()',
           '  const sessionFile = sessionManager?.getSessionFile?.()',
           "  sessionMetadata = typeof sessionId === 'string' && sessionId && typeof sessionFile === 'string' && sessionFile ? { session_id: sessionId, session_file: sessionFile } : {}",
+          '  trackModelSession(sessionMetadata.session_id)', 
           '}',
           '',
           'function updateRuntimeOmpSessionMetadata(ctx: unknown): void {',
           '  updateSessionMetadata(ctx)',
+          '  updateModelMetadata(ctx)',
           '}',
           '',
           'function getPostSessionMetadata(_ompRuntime: boolean): Record<string, unknown> {',
-          '  return sessionMetadata',
+          '  return { ...sessionMetadata, ...modelMetadata }',
           '}',
           ''
         ]
+  // Why: OMP emits no model_select of its own, so the active model is re-read from
+  // the event context on every post; the pane's status then always carries it.
+  // Reported only under the OMP runtime — Pi has no chat surface consuming it yet.
+  const modelMetadataSourceLines = [
+    'let modelMetadata: Record<string, unknown> = {}',
+    'let ompModelSwitchSupported = false',
+    'let modelSessionId: unknown = undefined',
+    '',
+    '// Why: OMP switches sessions in-process; a model belongs to the session that',
+    '// reported it, so it must not leak onto the first posts of the next one.',
+    'function trackModelSession(sessionId: unknown): void {',
+    '  if (sessionId === modelSessionId) return',
+    '  modelSessionId = sessionId',
+    '  modelMetadata = {}',
+    '}',
+    '',
+    '// Why: pi and OMP expose the active model as { provider, id } on both the event',
+    '// context and model_select events; the joined selector is what /model accepts back.',
+    'function updateModelMetadata(source: unknown): void {',
+    '  try {',
+    '    const model = (source as { model?: { provider?: unknown; id?: unknown } | null } | null)?.model',
+    "    const provider = typeof model?.provider === 'string' ? model.provider : ''",
+    "    const id = typeof model?.id === 'string' ? model.id : ''",
+    "    if (provider && id) modelMetadata = { model: provider + '/' + id, ...(ompModelSwitchSupported ? { model_switch_command: 'orca-model' } : {}) }",
+    '  } catch {',
+    '    // Why: a throwing model getter must never break status delivery.',
+    '  }',
+    '}'
+  ]
+
   // Why: Pi resumes from an existing transcript; OMP resumes directly by session id (#8962).
   const payloadLine =
     kind !== 'omp'
@@ -103,6 +140,8 @@ export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): strin
     'const HOOK_POST_TIMEOUT_MS = 1000',
     ...getPiAgentStatusPostQueueSourceLines(),
     ...(kind === 'pi' ? ['let piUiPromptDepth = 0', 'let piTurnInFlight = false'] : []),
+    ...modelMetadataSourceLines,
+    ''
     ...sessionMetadataSourceLines,
     '',
     '// Why: re-reading the endpoint file on every event is cheap (small file,',
@@ -166,12 +205,12 @@ export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): strin
     '  cancelPostRetry()',
     '  const metadata = getPostSessionMetadata(ompRuntime)',
     '// Model changes must not erase an unacknowledged completion in the latest-only slot.',
-    "  const previousCompletion = latestPost?.hookEventName === 'agent_end' && !latestPost.delivered && latestPost.metadata.session_id === metadata.session_id",
+    "  const previousCompletion = latestPost?.hookEventName === 'agent_end' && !latestPost.delivered && latestPost.metadata.session_id === metadata.session_id"
     '  pendingPost = {',
     '    revision: ++postRevision,',
     '    attempts: 0,',
     '    delivered: false,',
-    "    hookEventName: ompRuntime && hookEventName === 'model_select' && previousCompletion ? 'agent_end' : hookEventName,",
+    "    hookEventName: ompRuntime && hookEventName === 'model_select' && previousCompletion ? 'agent_end' : hookEventName,"
     // Why: every coalesced snapshot must retain an open modal, not just its start event.
     kind === 'pi'
       ? '    extra: { ...extra, ...(!ompRuntime && piUiPromptDepth > 0 ? { ui_prompt_active: true } : {}) },'
