@@ -4,9 +4,7 @@ import { createAgentStatusExtensionHarness } from './agent-status-extension-test
 
 /** The `payload` of every hook POST the extension made, in order. */
 function postedPayloads(fetchMock: ReturnType<typeof vi.fn>): Record<string, unknown>[] {
-  return fetchMock.mock.calls.map(
-    (call) => JSON.parse(String(call[1]?.body)).payload as Record<string, unknown>
-  )
+  return fetchMock.mock.calls.map((call) => JSON.parse(String(call[1]?.body)).payload)
 }
 
 /** Waits until `count` posts have been delivered.

@@ -13,10 +13,14 @@ vi.mock('./native-chat-session-option-discovery', () => ({
   discoverNativeChatCatalogModels: () => discoverModels()
 }))
 
-const storeState = {
+const storeState: {
+  settings: Record<string, unknown>
+  updateSettings: () => Promise<undefined>
+  agentStatusByPaneKey: Record<string, { model?: string; modelSwitchCommand?: 'orca-model' }>
+} = {
   settings: {},
   updateSettings: async () => undefined,
-  agentStatusByPaneKey: {} as Record<string, { model?: string; modelSwitchCommand?: 'orca-model' }>
+  agentStatusByPaneKey: {}
 }
 
 vi.mock('../../store', () => ({

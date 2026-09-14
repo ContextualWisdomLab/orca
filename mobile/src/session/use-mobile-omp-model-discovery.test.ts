@@ -7,6 +7,12 @@ import {
   clearMobileSessionOptionRecordsForTests
 } from './use-mobile-native-chat-session-options'
 
+import type { RpcResponse } from '../transport/types'
+
+function reply(result: unknown): RpcResponse {
+  return { id: 'discovery', ok: true, result, _meta: { runtimeId: 'host' } }
+}
+
 type Args = Parameters<typeof useMobileOmpModelDiscovery>[0]
 let renderer: ReactTestRenderer | undefined
 let options: ReturnType<typeof useMobileNativeChatSessionOptions>
@@ -49,12 +55,16 @@ const listed = {
 
 describe('mobile OMP model discovery and picker choices', () => {
   it('queries the execution workspace and retains the current model beside configured choices', async () => {
-    const sendRequest = vi.fn(async () => listed)
+    const sendRequest = vi.fn(async () => reply(listed))
     await mount({ sendRequest })
-    expect(sendRequest).toHaveBeenCalledWith('git.discoverCommitMessageModels', {
-      worktree: 'id:folder:one',
-      agentId: 'omp'
-    })
+    expect(sendRequest).toHaveBeenCalledWith(
+      'git.discoverCommitMessageModels',
+      {
+        worktree: 'id:folder:one',
+        agentId: 'omp'
+      },
+      undefined
+    )
     expect(modelChoices()).toMatchObject({
       currentValue: reportedModel,
       choices: expect.arrayContaining([
@@ -64,7 +74,7 @@ describe('mobile OMP model discovery and picker choices', () => {
     })
   })
   it('makes discovered choices selectable only after the live extension advertises support', async () => {
-    await mount({ sendRequest: vi.fn(async () => listed) })
+    await mount({ sendRequest: vi.fn(async () => reply(listed)) })
     expect(snapshot[0]?.settable).toBe(true)
     await act(async () => {
       expect(await options.setOption('model', 'provider/new')).toBe(true)
@@ -88,7 +98,7 @@ describe('mobile OMP model discovery and picker choices', () => {
       if (value instanceof Error) {
         throw value
       }
-      return value
+      return reply(value)
     })
     await mount({ sendRequest })
     expect(modelChoices()).toMatchObject({
@@ -97,11 +107,11 @@ describe('mobile OMP model discovery and picker choices', () => {
     })
   })
   it('does not expose a previous host response after changing hosts', async () => {
-    let resolve!: (value: unknown) => void
+    let resolve!: (value: RpcResponse) => void
     await mount({
       sendRequest: vi.fn(
         () =>
-          new Promise((r) => {
+          new Promise<RpcResponse>((r) => {
             resolve = r
           })
       )
@@ -111,16 +121,18 @@ describe('mobile OMP model discovery and picker choices', () => {
         ...args,
         hostId: 'host-b',
         client: {
-          sendRequest: vi.fn(async () => ({
-            ...listed,
-            models: [{ id: 'other/host', label: 'Other' }]
-          }))
+          sendRequest: vi.fn(async () =>
+            reply({
+              ...listed,
+              models: [{ id: 'other/host', label: 'Other' }]
+            })
+          )
         }
       }
       renderer!.update(createElement(Probe))
     })
     await act(async () => {
-      resolve(listed)
+      resolve(reply(listed))
     })
     expect(modelChoices()).toMatchObject({
       choices: expect.arrayContaining([expect.objectContaining({ value: 'other/host' })])

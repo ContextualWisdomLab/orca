@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
 import type { CatalogModel } from '../../../src/shared/agent-session-option-catalog'
-import type { RpcClient } from '../transport/rpc-client'
+import { defineRpcOperation, runRpcOperation } from '../transport/rpc-operation'
 
 const discoveryResult = z.object({
   success: z.literal(true),
@@ -11,9 +11,25 @@ const discoveryResult = z.object({
   )
 })
 
+const discoverOmpModels = defineRpcOperation({
+  name: 'omp.configured-models',
+  method: 'git.discoverCommitMessageModels',
+  acceptance: 'require-result-or-throw',
+  barrier: 'on-settle',
+  read: (raw: unknown) => {
+    const parsed = discoveryResult.safeParse(raw)
+    return {
+      compatible: true as const,
+      variant: 'configured-models' as const,
+      value: parsed.success ? parsed.data.models.map((model) => ({ ...model, options: [] })) : null,
+      salvage: { droppedPaths: [], droppedCount: 0 }
+    }
+  }
+})
+
 /** The runtime resolves the workspace's execution host, including SSH and folder workspaces. */
 export function useMobileOmpModelDiscovery(args: {
-  client: Pick<RpcClient, 'sendRequest'> | null
+  client: Parameters<typeof runRpcOperation>[0] | null
   hostId: string
   worktreeId: string
   enabled: boolean
@@ -30,19 +46,17 @@ export function useMobileOmpModelDiscovery(args: {
       return
     }
     let cancelled = false
-    void client
-      .sendRequest('git.discoverCommitMessageModels', {
-        worktree: `id:${worktreeId}`,
-        agentId: 'omp'
-      })
-      .then((value) => {
-        const parsed = discoveryResult.safeParse(value)
+    void runRpcOperation(client, discoverOmpModels, {
+      worktree: `id:${worktreeId}`,
+      agentId: 'omp'
+    })
+      .then((models) => {
         // Older hosts may return static fallback models; they are not configured OMP choices.
-        if (!cancelled && parsed.success) {
+        if (!cancelled && models !== null) {
           setResult({
             client,
             scope,
-            models: parsed.data.models.map((model) => ({ ...model, options: [] }))
+            models
           })
         }
       })
