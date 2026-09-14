@@ -105,6 +105,41 @@ describe('useNativeChatSessionOptions model reporting', () => {
     expect(modelDescriptor(result.current.snapshot).currentValue).toBe('deepseek/deepseek-v4-pro')
   })
 
+  it.each(['custom/current', 'deepseek/deepseek-v4-pro-new'])(
+    'keeps the exact OMP report %s after discovery',
+    async (reportedModel) => {
+      discoverModels.mockResolvedValue(OMP_DISCOVERED)
+      const paneKey = `tab-${reportedModel}:leaf`
+      const dispatchCommand = vi.fn()
+      storeState.agentStatusByPaneKey[paneKey] = {
+        model: 'deepseek/deepseek-v4-pro',
+        modelSwitchCommand: 'orca-model'
+      }
+      const { result, rerender } = renderHook(() =>
+        useNativeChatSessionOptions({
+          agent: 'omp',
+          terminalTabId: `tab-${reportedModel}`,
+          targetPtyId: `pty-${reportedModel}`,
+          dispatchCommand,
+          paneKey
+        })
+      )
+      await waitFor(() => expect(modelDescriptor(result.current.snapshot).choices).toHaveLength(2))
+      storeState.agentStatusByPaneKey[paneKey] = {
+        model: reportedModel,
+        modelSwitchCommand: 'orca-model'
+      }
+      rerender()
+      await waitFor(() =>
+        expect(modelDescriptor(result.current.snapshot).currentValue).toBe(reportedModel)
+      )
+      expect(result.current.snapshot[0]).toMatchObject({ valueSource: 'reported' })
+      expect(modelDescriptor(result.current.snapshot).choices).toContainEqual(
+        expect.objectContaining({ value: reportedModel })
+      )
+    }
+  )
+
   it('lets a pick stand until the OMP hook reports a different model', async () => {
     discoverModels.mockResolvedValue(OMP_DISCOVERED)
     const dispatchCommand = vi.fn<NativeChatSessionOptionDispatchCommand>(async () => undefined)

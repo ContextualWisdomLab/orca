@@ -87,6 +87,22 @@ describe('useMobileNativeChatSessionOptions', () => {
     })
   })
 
+  it.each(['custom/current', 'deepseek/deepseek-v4-pro-new'])(
+    'keeps the exact OMP report %s with discovered choices',
+    (reportedModel) => {
+      mount({
+        agent: 'omp',
+        reportedModel,
+        discoveredModels: [{ id: 'deepseek/deepseek-v4-pro', label: 'DeepSeek', options: [] }]
+      })
+      expect(api!.snapshot[0]).toMatchObject({ valueSource: 'reported' })
+      expect(api!.snapshot[0]!.kind).toMatchObject({
+        currentValue: reportedModel,
+        choices: expect.arrayContaining([expect.objectContaining({ value: reportedModel })])
+      })
+    }
+  )
+
   it('switches an OMP session with /orca-model <selector>', async () => {
     mount({
       agent: 'omp',
