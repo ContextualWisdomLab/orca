@@ -99,6 +99,16 @@ try {
   for (let i = 0; i < 50 && posts.length === 0; i++) {
     await Bun.sleep(10)
   }
+  if (
+    !posts.some(
+      (post) =>
+        post.payload?.hook_event_name === 'model_select' &&
+        post.payload?.model === after &&
+        post.payload?.model_switch_command === 'orca-model'
+    )
+  ) {
+    throw new Error('Missing model and capability HTTP report')
+  }
   console.log(
     JSON.stringify(
       {
