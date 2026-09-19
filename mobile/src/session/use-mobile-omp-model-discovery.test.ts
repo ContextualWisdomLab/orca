@@ -1,5 +1,5 @@
 import { createElement } from 'react'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create } from 'react-test-renderer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useMobileOmpModelDiscovery } from './use-mobile-omp-model-discovery'
 import {
@@ -14,7 +14,7 @@ function reply(result: unknown): RpcResponse {
 }
 
 type Args = Parameters<typeof useMobileOmpModelDiscovery>[0]
-let renderer: ReactTestRenderer | undefined
+let renderer: ReturnType<typeof create> | undefined
 let options: ReturnType<typeof useMobileNativeChatSessionOptions>
 let switchCapability: string | undefined
 let snapshot: ReturnType<typeof useMobileNativeChatSessionOptions>['snapshot'] = []
