@@ -22,6 +22,9 @@ async function capturedScreen(name: string): Promise<string[]> {
 describe('Antigravity visible-screen readiness from real PTY captures', () => {
   it.each([
     ['antigravity-ready-default-127', true],
+    ['antigravity-ready-api-key-gemini-model', false],
+    ['antigravity-ready-account-info-hidden', false],
+    ['antigravity-dialog-dismissed', false],
     ['antigravity-ready-plan-127', true],
     ['antigravity-ready-accept-edits-127', true],
     ['antigravity-plan-hint-as-draft-127', false],

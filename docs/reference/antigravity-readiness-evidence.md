@@ -1,5 +1,39 @@
 # Antigravity readiness: what the transcripts show
 
+## 2026-09-19: CI replay corrections
+
+The full runtime suite still expected the old hand-written bare-caret screens to
+be ready. It now replays the recorded 1.2.7 screen at 120×40, including the
+background-handle, live-leaf, retained-trust-text and large retained-tail paths.
+The waits allow 3.5 seconds so the 2-second idle poll can observe the asynchronous
+screen projection. The no-whole-tail-split performance assertion remains.
+
+The older API-key, hidden-account and dismissed-dialog captures include shutdown.
+Their unique `ESC[>4m ESC[=0;1u` trailer resets keyboard modes, moves down and clears
+the shortcut footer with `ESC[J`; the dismissed dialog also prints a resume
+command. Their live-phase tests stop before that recorded trailer. Full-file
+screen checks require **not ready** after the footer is erased. No capture bytes
+were edited and no production readiness condition was relaxed.
+
+The transcript suite now asserts the intended verdict directly, including rejecting
+the model picker, instead of preserving historical defects as inverted expectations.
+
+
+## 2026-09-19: host contact and live prompt submission
+
+A regression marked an SSH terminal `unverifiable` after caching a ready screen.
+The wait incorrectly returned ready. Readiness now refuses that cached verdict
+while host contact is unverifiable, and the adopted-screen fallback rechecks
+liveness when an outstanding snapshot completes. Both cases pass runtime tests;
+this is simulated host loss, not a claim of real SSH validation. Reconnection
+snapshot freshness remains a separate validation task.
+
+In the hidden app, a real `terminal.send` with text plus Enter submitted a harmless
+prompt to installed agy. The rendered request failed with HTTP 401 and
+`ACCESS_TOKEN_TYPE_UNSUPPORTED`; the subsequent empty composer satisfied the
+readiness wait. The public RPC's guarded prompt route is limited to Claude/Codex,
+so this agy check proves ordinary input delivery, not guarded worker submission.
+
 ## 2026-09-19: ordinary wait and delivery integration
 
 The ordinary wait paths now consult the same current-screen classifier for
