@@ -143,7 +143,7 @@ export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): strin
     ...getPiAgentStatusPostQueueSourceLines(),
     ...(kind === 'pi' ? ['let piUiPromptDepth = 0', 'let piTurnInFlight = false'] : []),
     ...modelMetadataSourceLines,
-    ''
+    '',
     ...sessionMetadataSourceLines,
     '',
     '// Why: re-reading the endpoint file on every event is cheap (small file,',
@@ -207,12 +207,12 @@ export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): strin
     '  cancelPostRetry()',
     '  const metadata = getPostSessionMetadata(ompRuntime)',
     '// Model changes must not erase an unacknowledged completion in the latest-only slot.',
-    "  const previousCompletion = latestPost?.hookEventName === 'agent_end' && !latestPost.delivered && latestPost.metadata.session_id === metadata.session_id"
+    "  const previousCompletion = latestPost?.hookEventName === 'agent_end' && !latestPost.delivered && latestPost.metadata.session_id === metadata.session_id",
     '  pendingPost = {',
     '    revision: ++postRevision,',
     '    attempts: 0,',
     '    delivered: false,',
-    "    hookEventName: ompRuntime && hookEventName === 'model_select' && previousCompletion ? 'agent_end' : hookEventName,"
+    "    hookEventName: ompRuntime && hookEventName === 'model_select' && previousCompletion ? 'agent_end' : hookEventName,",
     // Why: every coalesced snapshot must retain an open modal, not just its start event.
     kind === 'pi'
       ? '    extra: { ...extra, ...(!ompRuntime && piUiPromptDepth > 0 ? { ui_prompt_active: true } : {}) },'
