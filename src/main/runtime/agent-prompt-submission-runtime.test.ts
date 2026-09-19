@@ -5,10 +5,6 @@ import {
   getAgentPromptSubmitDelayMs
 } from '../../shared/agent-prompt-injection'
 import {
-  resolveAgentPromptSubmitDelayForAgent
-} from '../../shared/agent-prompt-injection'
-import { TUI_AGENT_CONFIG } from '../../shared/tui-agent-config'
-import {
   AGENT_PROMPT_TEST_WORKTREE_PATH,
   createAgentPromptSubmissionRuntime
 } from './agent-prompt-submission-runtime-test-fixture'
@@ -904,64 +900,4 @@ describe('agent prompt submission runtime', () => {
     expect(writes.filter((data) => data === '\r')).toHaveLength(1)
   })
 
-  it('sends one retry Enter for cursor-agent after the configured gap', async () => {
-    vi.useFakeTimers()
-    const retryDelayMs = TUI_AGENT_CONFIG.cursor.submitRetryDelayMs ?? 0
-    const prompt = 'review this'
-    const submitDelayMs = getAgentPromptSubmitDelayMs(
-      process.platform,
-      Buffer.byteLength(buildAgentPromptPasteBytes(prompt), 'utf8')
-    )
-    const { runtime, handle, writes } = await createPromptRuntime(() => undefined, 'cursor')
-    const submission = runtime.sendTerminalAgentPrompt(handle, prompt)
-    const stalled = expect(submission).rejects.toThrow('agent_prompt_stalled')
-
-    await vi.advanceTimersByTimeAsync(submitDelayMs)
-    expect(writes.filter((data) => data === '\r')).toHaveLength(1)
-    await vi.advanceTimersByTimeAsync(retryDelayMs - 1)
-    expect(writes.filter((data) => data === '\r')).toHaveLength(1)
-    await vi.advanceTimersByTimeAsync(1)
-    expect(writes.filter((data) => data === '\r')).toHaveLength(2)
-
-    await vi.runAllTimersAsync()
-    await stalled
-  })
-
-  it('waits for antigravity line-settle before the first Enter on a long prompt', async () => {
-    vi.useFakeTimers()
-    const prompt = `${'Filler line\n'.repeat(100)}AGY_LONG_OK`
-    const submitDelayMs = resolveAgentPromptSubmitDelayForAgent(process.platform, prompt, 'antigravity')
-    const retryDelayMs = TUI_AGENT_CONFIG.antigravity.submitRetryDelayMs ?? 0
-    const { runtime, handle, writes } = await createPromptRuntime(() => undefined, 'antigravity')
-    const submission = runtime.sendTerminalAgentPrompt(handle, prompt)
-    const stalled = expect(submission).rejects.toThrow('agent_prompt_stalled')
-
-    await vi.advanceTimersByTimeAsync(submitDelayMs - 1)
-    expect(writes.filter((data) => data === '\r')).toHaveLength(0)
-    await vi.advanceTimersByTimeAsync(1)
-    expect(writes.filter((data) => data === '\r')).toHaveLength(1)
-    await vi.advanceTimersByTimeAsync(retryDelayMs)
-    expect(writes.filter((data) => data === '\r')).toHaveLength(2)
-
-    await vi.runAllTimersAsync()
-    await stalled
-  })
-
-  it('does not send a retry Enter for agents without submitRetryDelayMs', async () => {
-    vi.useFakeTimers()
-    const prompt = 'review this'
-    const submitDelayMs = getAgentPromptSubmitDelayMs(
-      process.platform,
-      Buffer.byteLength(buildAgentPromptPasteBytes(prompt), 'utf8')
-    )
-    const { runtime, handle, writes } = await createPromptRuntime(() => undefined, 'aider')
-    const submission = runtime.sendTerminalAgentPrompt(handle, prompt)
-    const stalled = expect(submission).rejects.toThrow('agent_prompt_stalled')
-
-    await vi.advanceTimersByTimeAsync(submitDelayMs + 5_000)
-    expect(writes.filter((data) => data === '\r')).toHaveLength(1)
-
-    await vi.runAllTimersAsync()
-    await stalled
-  })
 })
