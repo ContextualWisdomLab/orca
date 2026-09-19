@@ -1,5 +1,27 @@
 # Antigravity readiness: what the transcripts show
 
+## 2026-09-19: ordinary wait and delivery integration
+
+The ordinary wait paths now consult the same current-screen classifier for
+Antigravity, including immediate checks, polling, title callbacks and the queued
+message delivery gate. Snapshot reads reuse the execution host's existing terminal
+model/provider path and pending-read deduplication. Cached screens are rejected
+after output, process generation changes or queued headless reflow/writes.
+
+A hidden rebuilt Orca with installed agy reproduced the previous failure: an empty
+composer reported the dismissed trust prompt, then timed out after an app restart.
+With this integration, the same daemon terminal returns ready. Typing the exact
+Plan placeholder makes the wait time out; clearing it returns ready again. Screenshots
+and wait results were inspected together. No model generation was needed for this
+check; successful authenticated worker turns remain unverified.
+
+Runtime tests replay recorded output through the normal wait path, exercise a
+trust dialog before its recorded alternate-screen teardown, then replay the ready
+screen. They also cover drafts, working output, cache invalidation on new output
+and reflow, and queued delivery retry after a draft becomes empty. Narrow/wrapped
+layouts and absent banners remain unrecognized rather than claimed ready. Real
+SSH/Windows execution and disconnect freshness still require validation.
+
 ## 2026-09-19: live 1.2.7 mode captures and visible-screen fallback
 
 New recordings under `src/main/runtime/__fixtures__/`:
@@ -24,8 +46,8 @@ shortcut footer, and rejects separately projected draft text. The adopted-termin
 visible-screen fallback uses it. Captured-screen tests and runtime fallback tests
 cover ready, working, dialog, and draft cases, including mocked SSH snapshots.
 
-**This is not a complete readiness fix.** The regular retained-output matcher still
-has the defects below. Narrow wrapping, a scrolled-away banner, and older layouts
+**This was initially a fallback-only fix.** The ordinary integration above now
+bypasses the defective retained-output matcher for recognized Antigravity panes. Narrow wrapping, a scrolled-away banner, and older layouts
 without the shortcut footer require further evidence and integration. The older
 `antigravity-composer-multiline-unsent.txt` recording was reused from PR #20027 with
 its original metadata; it was not recaptured on 1.2.7.
