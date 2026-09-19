@@ -85,9 +85,15 @@ describe('OMP model reporting', () => {
 
   it('drops the model when OMP switches to a session that has not reported one', async () => {
     const harness = createAgentStatusExtensionHarness({ kind: 'omp' })
-    const session = (id: string) => ({
-      sessionManager: { getSessionId: () => id, getSessionFile: () => `/tmp/${id}.jsonl` }
-    })
+    let sessionId = 'omp-a'
+    const sessionManager = {
+      getSessionId: () => sessionId,
+      getSessionFile: () => `/tmp/${sessionId}.jsonl`
+    }
+    const session = (id: string) => {
+      sessionId = id
+      return { sessionManager }
+    }
 
     await harness.callHook('agent_start', undefined, { ...session('omp-a'), model: DEEPSEEK })
     await settled(harness.fetchMock, 1)
