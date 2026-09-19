@@ -4,6 +4,7 @@ import {
   buildAgentPromptPasteBytes,
   getAgentPromptSubmitDelayMs
 } from '../../shared/agent-prompt-injection'
+import { TUI_AGENT_CONFIG } from '../../shared/tui-agent-config'
 import {
   AGENT_PROMPT_TEST_WORKTREE_PATH,
   createAgentPromptSubmissionRuntime
@@ -898,5 +899,46 @@ describe('agent prompt submission runtime', () => {
 
     await rejected
     expect(writes.filter((data) => data === '\r')).toHaveLength(1)
+  })
+
+  it('sends one retry Enter for cursor-agent after the configured gap', async () => {
+    vi.useFakeTimers()
+    const retryDelayMs = TUI_AGENT_CONFIG.cursor.submitRetryDelayMs ?? 0
+    const prompt = 'review this'
+    const submitDelayMs = getAgentPromptSubmitDelayMs(
+      process.platform,
+      Buffer.byteLength(buildAgentPromptPasteBytes(prompt), 'utf8')
+    )
+    const { runtime, handle, writes } = await createPromptRuntime(() => undefined, 'cursor')
+    const submission = runtime.sendTerminalAgentPrompt(handle, prompt)
+    const stalled = expect(submission).rejects.toThrow('agent_prompt_stalled')
+
+    await vi.advanceTimersByTimeAsync(submitDelayMs)
+    expect(writes.filter((data) => data === '\r')).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(retryDelayMs - 1)
+    expect(writes.filter((data) => data === '\r')).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(writes.filter((data) => data === '\r')).toHaveLength(2)
+
+    await vi.runAllTimersAsync()
+    await stalled
+  })
+
+  it('does not send a retry Enter for agents without submitRetryDelayMs', async () => {
+    vi.useFakeTimers()
+    const prompt = 'review this'
+    const submitDelayMs = getAgentPromptSubmitDelayMs(
+      process.platform,
+      Buffer.byteLength(buildAgentPromptPasteBytes(prompt), 'utf8')
+    )
+    const { runtime, handle, writes } = await createPromptRuntime(() => undefined, 'aider')
+    const submission = runtime.sendTerminalAgentPrompt(handle, prompt)
+    const stalled = expect(submission).rejects.toThrow('agent_prompt_stalled')
+
+    await vi.advanceTimersByTimeAsync(submitDelayMs + 5_000)
+    expect(writes.filter((data) => data === '\r')).toHaveLength(1)
+
+    await vi.runAllTimersAsync()
+    await stalled
   })
 })

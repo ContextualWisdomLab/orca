@@ -223,7 +223,10 @@ const TUI_AGENT_CONFIG_SOURCE: Record<TuiAgent, TuiAgentConfigSource> = {
     detectCmd: 'cursor-agent',
     promptInjectionMode: 'argv',
     // Why: first-launch trust menu swallows the bracketed paste; pre-write the .workspace-trusted marker so it skips (agent-trust-presets.ts).
-    preflightTrust: 'cursor'
+    preflightTrust: 'cursor',
+    // Why: worker-start dispatches via bracketed paste; cursor-agent can leave long prompts as
+    // "Pasted text +N lines" and eat the first Enter, same failure mode as Codex's composer.
+    submitRetryDelayMs: 1200
   },
   droid: {
     detectCmd: 'droid',
