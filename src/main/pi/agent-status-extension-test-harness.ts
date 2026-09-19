@@ -8,11 +8,10 @@ import { getPiAgentStatusExtensionSource } from './agent-status-extension-source
 
 export type HookContext = {
   hasUI?: boolean
-  ui?: { setEditorText?: (text: string) => void }
+  ui?: { setEditorText?: (text: string) => void; notify?: (message: string, level: string) => void }
   isIdle?: () => boolean
   model?: { provider?: unknown; id?: unknown } | null
   modelRegistry?: { getAvailable: () => { provider: string; id: string }[] }
-  ui?: { notify: (message: string, level: string) => void }
   sessionManager?: {
     getSessionId?: () => unknown
     getSessionFile?: () => unknown
