@@ -14,7 +14,11 @@ function reply(result: unknown): RpcResponse {
 }
 
 type Args = Parameters<typeof useMobileOmpModelDiscovery>[0]
-let renderer: ReturnType<typeof create> | undefined
+type TestRenderer = {
+  unmount: () => void
+  update: (element: ReturnType<typeof createElement>) => void
+}
+let renderer: TestRenderer | undefined
 let options: ReturnType<typeof useMobileNativeChatSessionOptions>
 let switchCapability: string | undefined
 let snapshot: ReturnType<typeof useMobileNativeChatSessionOptions>['snapshot'] = []
@@ -81,7 +85,7 @@ describe('mobile OMP model discovery and picker choices', () => {
     })
     await act(async () => {
       switchCapability = undefined
-      renderer!.update(createElement(Probe))
+      renderer?.update(createElement(Probe))
     })
     expect(snapshot[0]?.settable).toBe(false)
     await act(async () => {
@@ -129,7 +133,7 @@ describe('mobile OMP model discovery and picker choices', () => {
           )
         }
       }
-      renderer!.update(createElement(Probe))
+      renderer?.update(createElement(Probe))
     })
     await act(async () => {
       resolve(reply(listed))
