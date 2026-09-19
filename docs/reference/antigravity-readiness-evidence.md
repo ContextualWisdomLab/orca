@@ -1,5 +1,37 @@
 # Antigravity readiness: what the transcripts show
 
+## 2026-09-19: live 1.2.7 mode captures and visible-screen fallback
+
+New recordings under `src/main/runtime/__fixtures__/`:
+
+- `antigravity-ready-default-127.txt`: empty default-mode composer.
+- `antigravity-ready-plan-127.txt`: empty composer displaying
+  `> Plan mode: research & plan only (shift+tab to cycle)`.
+- `antigravity-ready-accept-edits-127.txt`: empty composer displaying
+  `> Accept-edits mode: file edits auto-approved (shift+tab to cycle)`.
+- `antigravity-plan-hint-as-draft-127.txt`: the exact plan placeholder text typed
+  as a real, unsubmitted draft.
+
+The ready and typed plan rows have identical text and styling. Their footers differ:
+the empty composer shows `? for shortcuts`; a typed draft removes it. The captured
+working screen instead shows `esc to cancel`. A bare-caret requirement alone would
+reject both empty mode composers. Matching the placeholder text alone would accept
+the user's draft. The installed binary reports version `1.2.1`, but its banner is
+`1.2.7`; these recordings identify the banner version.
+
+`terminal-screen-readiness.ts` now checks the complete visible composer frame and
+shortcut footer, and rejects separately projected draft text. The adopted-terminal
+visible-screen fallback uses it. Captured-screen tests and runtime fallback tests
+cover ready, working, dialog, and draft cases, including mocked SSH snapshots.
+
+**This is not a complete readiness fix.** The regular retained-output matcher still
+has the defects below. Narrow wrapping, a scrolled-away banner, and older layouts
+without the shortcut footer require further evidence and integration. The older
+`antigravity-composer-multiline-unsent.txt` recording was reused from PR #20027 with
+its original metadata; it was not recaptured on 1.2.7.
+
+## Earlier investigation (1.2.0)
+
 `findAntigravityReadyPromptIndex` in `src/main/runtime/terminal-wait-detection.ts` decides whether
 an Antigravity pane is ready for a prompt. It has been written five times, each version tuned
 against a five-line screen typed from memory into a `.spec.ts` fixture. Three of the first four
