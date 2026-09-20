@@ -108,6 +108,35 @@ describe('syncSystemConfigIntoManagedCodexHome', () => {
     expect(readFileSync(getSystemConfigPath(), 'utf-8')).toContain(MANAGED_CODEX_HOME_PLACEHOLDER)
   })
 
+  it('keeps native Windows helper placeholders unresolved under the fail-closed contract', async () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+    try {
+      const managedHome = join(userDataDir, 'codex-accounts', 'windows', 'home')
+      mkdirSync(managedHome, { recursive: true })
+      const source = [
+        '[mcp_servers.time]',
+        'url = "https://time.invalid/mcp"',
+        `http_headers_helper = "headers --home ${MANAGED_CODEX_HOME_PLACEHOLDER}"`,
+        ''
+      ].join('\n')
+      writeFileSync(getSystemConfigPath(), source, 'utf-8')
+
+      syncSystemConfigIntoManagedCodexHome(
+        { runtimeHomePath: managedHome, systemHomePath: getSystemCodexHomePath() },
+        managedHome
+      )
+
+      expect(readFileSync(join(managedHome, 'config.toml'), 'utf-8')).toContain(
+        MANAGED_CODEX_HOME_PLACEHOLDER
+      )
+    } finally {
+      if (originalPlatform) {
+        Object.defineProperty(process, 'platform', originalPlatform)
+      }
+    }
+  })
+
   it('seeds a missing runtime config without copying system hook trust', () => {
     writeFileSync(
       getSystemConfigPath(),

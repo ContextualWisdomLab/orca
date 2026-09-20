@@ -157,6 +157,14 @@ describe('managed Codex MCP helper binding', () => {
     expect(bindManagedCodexHomeInMcpHelpers(config, home, 'win32')).toBe(config)
   })
 
+  it('binds a WSL UNC managed home using its POSIX path even on Windows', () => {
+    const managedHome = '\\\\wsl.localhost\\Ubuntu\\home\\alice\\.codex-account'
+    const bound = bindManagedCodexHomeInMcpHelpers(config, managedHome, 'win32')
+
+    expect(bound).toContain("--home '/home/alice/.codex-account'")
+    expect(bound).not.toContain(MANAGED_CODEX_HOME_PLACEHOLDER)
+  })
+
   it('does not interpolate lookalikes outside MCP helper fields', () => {
     const input = [
       `note = "${MANAGED_CODEX_HOME_PLACEHOLDER}"`,
