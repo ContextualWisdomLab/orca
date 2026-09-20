@@ -578,7 +578,7 @@ describe('OrcaRuntimeService', () => {
     }
   })
 
-  it('injects pending orchestration messages into Cursor Agent without auto-submitting', async () => {
+  it('submits pending orchestration messages into a completed Cursor Agent turn', async () => {
     vi.useFakeTimers()
     try {
       const runtime = new OrcaRuntimeService(store)
@@ -609,12 +609,44 @@ describe('OrcaRuntimeService', () => {
       const submitWrites = write.mock.calls.filter(
         ([ptyId, text]) => ptyId === 'pty-1' && text === '\r'
       )
-      expect(submitWrites).toHaveLength(0)
+      expect(submitWrites).toHaveLength(1)
 
       const unread = db.getUnreadMessages(mailbox)
       expect(unread).toHaveLength(1)
       expect(unread[0].read).toBe(0)
       expect(unread[0].delivered_at).toEqual(expect.any(String))
+      db.close()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not submit Cursor notification text when a new turn starts before Enter', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = new OrcaRuntimeService(store)
+      const db = new InMemoryOrchestrationMessages()
+      const write = vi.fn().mockReturnValue(true)
+      setInMemoryOrchestrationMessages(runtime, db)
+      runtime.setPtyController({
+        write,
+        writeWithSettlement: settledWriteStub(write),
+        kill: vi.fn(),
+        getForegroundProcess: async () => null
+      })
+      syncSinglePty(runtime)
+
+      const [terminal] = (await runtime.listTerminals()).terminals
+      bindSinglePtyRun(db, terminal.handle)
+      runtime.onPtyData('pty-1', '\x1b]0;\u280b Cursor Agent\x07', 100)
+      runtime.onPtyData('pty-1', '\x1b]0;Cursor ready\x07', 101)
+      db.insertMessage({ from: 'term_sender', to: terminal.handle, subject: 'cursor turn' })
+      runtime.deliverPendingMessagesForHandle(terminal.handle)
+
+      runtime.onPtyData('pty-1', '\x1b]0;\u2807 Cursor Agent\x07', 102)
+      await vi.advanceTimersByTimeAsync(500)
+
+      expect(write.mock.calls.filter(([, text]) => text === '\r')).toHaveLength(0)
       db.close()
     } finally {
       vi.useRealTimers()

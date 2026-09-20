@@ -1,4 +1,3 @@
-import { isCursorAgentTitle } from '../../../shared/agent-detection'
 import { formatMessagePointer } from './formatter'
 import type {
   OrchestrationMailboxPointerMessage,
@@ -147,16 +146,6 @@ function finishPointerWriteAndStageEnter<TWaiter extends OrchestrationMessageWai
       }
       return
     }
-    if (
-      [args.leaf.lastOscTitle, args.leaf.paneTitle, args.deps.getTabTitle(args.leaf.tabId)].some(
-        isCursorAgentTitle
-      )
-    ) {
-      db.markAsDelivered(flight.stagedMessageIds)
-      args.state.clearWatermark(args.mailboxHandle, args.newestSequence, ptyId)
-      args.redrive(args.mailboxHandle)
-      return
-    }
     const submitEnter = (): void =>
       submitOrchestrationMailboxPointer(
         {
@@ -165,6 +154,7 @@ function finishPointerWriteAndStageEnter<TWaiter extends OrchestrationMessageWai
           getDb: args.deps.getDb,
           resolveSubmitTarget: args.deps.resolveSubmitTarget,
           getMessageWaiters: args.deps.getMessageWaiters,
+          isAgentSettledForDelivery: args.deps.isAgentSettledForDelivery,
           isLeafPtyProvenAbsent: args.deps.isLeafPtyProvenAbsent,
           writePty: args.deps.writePty,
           settle: args.settle,

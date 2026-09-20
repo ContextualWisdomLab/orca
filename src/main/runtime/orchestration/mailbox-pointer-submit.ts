@@ -23,6 +23,7 @@ type PointerSubmitDependencies<TWaiter extends OrchestrationMessageWaiter> = {
     ptyId: string
   ) => OrchestrationMailboxPointerSubmitTarget | null
   getMessageWaiters: (mailboxHandle: string) => ReadonlySet<TWaiter> | undefined
+  isAgentSettledForDelivery: (leaf: OrchestrationMailboxLeaf) => boolean
   isLeafPtyProvenAbsent: (ptyId: string) => Promise<boolean>
   writePty: (ptyId: string, data: string) => WriteSettlement | Promise<WriteSettlement>
   settle: (ptyId: string, flight: OrchestrationMailboxDeliveryFlight) => void
@@ -88,6 +89,10 @@ export function submitOrchestrationMailboxPointer<TWaiter extends OrchestrationM
           exactTarget.leaf.lastAgentStatus === 'working')
       if (!exactTarget?.leaf.writable || !sameMailbox) {
         clearAndRedrive = true
+      } else if (!deps.isAgentSettledForDelivery(exactTarget.leaf)) {
+        deps.state.deferFlightUntilIdle(input.ptyId)
+        input.flight.submitEnter = () => submitOrchestrationMailboxPointer(deps, input)
+        deferredUntilIdle = true
       } else if (
         exactTarget.leaf.lastAgentStatusObservedLive &&
         exactTarget.leaf.lastAgentStatus === null
