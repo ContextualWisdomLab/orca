@@ -103,14 +103,14 @@ describe('managed Codex MCP helper binding', () => {
   posixIt('rejects escaped whitespace before the managed-home placeholder', () => {
     const home = '/tmp/managed/home'
     for (const whitespace of [' ', '\t']) {
-      const helper = `set -- --home\\${whitespace}${MANAGED_CODEX_HOME_PLACEHOLDER}; printf '<%s>\\n' "$@"`
+      const helper = `printf '[%s]' --home\\${whitespace}${MANAGED_CODEX_HOME_PLACEHOLDER}`
       const input = `[mcp_servers.probe]\nhttp_headers_helper = ${JSON.stringify(helper)}\n`
 
       expect(bindManagedCodexHomeInMcpHelpers(input, home, 'darwin'), JSON.stringify(whitespace)).toBe(
         input
       )
       expect(execFileSync('/bin/sh', ['-c', helper], { encoding: 'utf8' })).toBe(
-        `<--home${whitespace}${MANAGED_CODEX_HOME_PLACEHOLDER}>\n`
+        `[--home${whitespace}${MANAGED_CODEX_HOME_PLACEHOLDER}]`
       )
     }
   })
