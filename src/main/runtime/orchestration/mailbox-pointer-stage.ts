@@ -93,14 +93,13 @@ export function stageOrchestrationMailboxPointer<TWaiter extends OrchestrationMe
     args.settle(ptyId, flight)
   }
   try {
-    const writeResult = args.deps.writePty(
-      ptyId,
-      formatMessagePointer(
-        args.messages.length,
-        args.mailboxHandle,
-        args.deps.getCliCommand(expectedTarget.terminalHandle)
-      )
+    const pointerPayload = formatMessagePointer(
+      args.messages.length,
+      args.mailboxHandle,
+      args.deps.getCliCommand(expectedTarget.terminalHandle)
     )
+    flight.pointerPayload = pointerPayload.replace(/\s+/g, ' ').trim()
+    const writeResult = args.deps.writePty(ptyId, pointerPayload)
     if (isSettledWrite(writeResult)) {
       settlePointerWrite(writeResult)
       return
@@ -155,6 +154,7 @@ function finishPointerWriteAndStageEnter<TWaiter extends OrchestrationMessageWai
           resolveSubmitTarget: args.deps.resolveSubmitTarget,
           getMessageWaiters: args.deps.getMessageWaiters,
           isAgentSettledForDelivery: args.deps.isAgentSettledForDelivery,
+          getVisibleComposerDraft: args.deps.getVisibleComposerDraft,
           isLeafPtyProvenAbsent: args.deps.isLeafPtyProvenAbsent,
           writePty: args.deps.writePty,
           settle: args.settle,

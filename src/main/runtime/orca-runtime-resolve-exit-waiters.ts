@@ -106,9 +106,6 @@ export class OrcaRuntimeWithResolveExitWaiters extends OrcaRuntimeWithBindPtyInc
     // A visible composer draft is user-owned input, not completion evidence; never submit a
     // mailbox pointer into it. The draft may be absent from retained output, so inspect the
     // current headless/provider projection before applying title-based idle evidence.
-    if (this.hasVisibleTerminalDraft(leaf.ptyId)) {
-      return false
-    }
     const screen = this.getTerminalScreenReadiness(
       leaf.ptyId,
       buildTerminalWaitText(leaf.tailBuffer, leaf.tailPartialLine, leaf.preview)

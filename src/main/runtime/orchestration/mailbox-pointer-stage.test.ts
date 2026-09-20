@@ -3,6 +3,7 @@ import { OrchestrationDb } from './db'
 import { OrchestrationMailboxPointerDelivery } from './mailbox-pointer-delivery'
 import { OrchestrationMailboxPointerState } from './mailbox-pointer-state'
 import { stageOrchestrationMailboxPointer } from './mailbox-pointer-stage'
+import { formatMessagePointer } from './formatter'
 import {
   WRITE_ACCEPTED,
   writeRefused,
@@ -117,6 +118,7 @@ describe('mailbox pointer staging watermark', () => {
       getLeaf: () => cursorLeaf,
       getLiveLeafForHandle: () => cursorLeaf,
       isAgentSettledForDelivery: () => settled,
+      getVisibleComposerDraft: () => formatMessagePointer(1, 'run:run-1', 'orca').trim(),
       resolveSubmitTarget: () => ({
         leaf: cursorLeaf,
         terminalHandle: 'term-1',

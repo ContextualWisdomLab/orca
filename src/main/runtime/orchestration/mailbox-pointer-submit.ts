@@ -13,6 +13,7 @@ import type {
   OrchestrationMailboxPointerState
 } from './mailbox-pointer-state'
 import type { WriteSettlement } from '../../../shared/pty-write-settlement'
+import { isCursorAgentTitle } from '../../../shared/agent-detection'
 
 type PointerSubmitDependencies<TWaiter extends OrchestrationMessageWaiter> = {
   mailboxOwner: OrchestrationMailboxOwner
@@ -24,6 +25,7 @@ type PointerSubmitDependencies<TWaiter extends OrchestrationMessageWaiter> = {
   ) => OrchestrationMailboxPointerSubmitTarget | null
   getMessageWaiters: (mailboxHandle: string) => ReadonlySet<TWaiter> | undefined
   isAgentSettledForDelivery: (leaf: OrchestrationMailboxLeaf) => boolean
+  getVisibleComposerDraft: (ptyId: string) => string | null | undefined
   isLeafPtyProvenAbsent: (ptyId: string) => Promise<boolean>
   writePty: (ptyId: string, data: string) => WriteSettlement | Promise<WriteSettlement>
   settle: (ptyId: string, flight: OrchestrationMailboxDeliveryFlight) => void
@@ -96,6 +98,12 @@ export function submitOrchestrationMailboxPointer<TWaiter extends OrchestrationM
         deps.state.deferFlightUntilIdle(input.ptyId)
         input.flight.submitEnter = () => submitOrchestrationMailboxPointer(deps, input)
         deferredUntilIdle = true
+      } else if (
+        [exactTarget.leaf.lastOscTitle, exactTarget.leaf.paneTitle].some(isCursorAgentTitle) &&
+        normalizeComposerText(deps.getVisibleComposerDraft(input.ptyId)) !==
+          input.flight.pointerPayload
+      ) {
+        releaseWithoutRedrive = true
       } else if (
         exactTarget.leaf.lastAgentStatusObservedLive &&
         exactTarget.leaf.lastAgentStatus === null
@@ -179,4 +187,8 @@ export function submitOrchestrationMailboxPointer<TWaiter extends OrchestrationM
         deps.redrive(input.mailboxHandle, clearAndRedrive)
       }
     })
+}
+
+function normalizeComposerText(value: string | null | undefined): string | null | undefined {
+  return value === undefined ? undefined : (value?.replace(/\s+/g, ' ').trim() ?? null)
 }

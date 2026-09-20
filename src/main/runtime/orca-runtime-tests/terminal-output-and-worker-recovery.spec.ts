@@ -512,7 +512,6 @@ describe('OrcaRuntimeService', () => {
       db.insertMessage({ from: 'term_sender', to: terminal.handle, subject: 'hello' })
 
       runtime.deliverPendingMessagesForHandle(terminal.handle)
-
       expect(write).toHaveBeenCalledWith(
         'pty-1',
         expect.stringContaining('You have 1 orchestration message')
@@ -557,7 +556,6 @@ describe('OrcaRuntimeService', () => {
       })
 
       runtime.deliverPendingMessagesForHandle(terminal.handle)
-
       expect(write).toHaveBeenCalledWith(
         'pty-1',
         expect.stringContaining('You have 1 orchestration message')
@@ -600,6 +598,11 @@ describe('OrcaRuntimeService', () => {
       db.insertMessage({ from: 'term_sender', to: terminal.handle, subject: 'hello cursor' })
 
       runtime.deliverPendingMessagesForHandle(terminal.handle)
+      runtime.onPtyData(
+        'pty-1',
+        '\x1b[?1049h\r\n────────\r\n❯ You have 1 orchestration message. Run `orca-dev orchestration check --run run_test`.\x1b[3G',
+        102
+      )
 
       expect(write).toHaveBeenCalledWith(
         'pty-1',
@@ -677,6 +680,11 @@ describe('OrcaRuntimeService', () => {
       }
 
       runtime.deliverPendingMessagesForHandle(terminal.handle)
+      runtime.onPtyData(
+        'pty-1',
+        '\x1b[?1049h\r\n────────\r\n❯ You have 3 orchestration messages. Run `orca-dev orchestration check --run run_test`.\x1b[3G',
+        102
+      )
       expect(write).toHaveBeenCalledWith(
         'pty-1',
         expect.stringContaining('You have 3 orchestration messages')

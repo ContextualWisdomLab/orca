@@ -14,20 +14,15 @@ import {
   type TerminalScreenReadiness
 } from './terminal-screen-readiness'
 import { withTimeout } from './runtime-async-boundaries'
-import { detectTerminalComposerDraft } from '../../shared/terminal-composer-draft'
 
 export class OrcaRuntimeWithVisibleSnapshotPreview extends OrcaRuntimeWithCaptureProviderTerminalBuffer {
-  protected hasVisibleTerminalDraft(ptyId: string | null | undefined): boolean {
-    if (!ptyId) {
-      return false
-    }
-    if (this.providerVisibleStateByPtyId.get(ptyId)?.draft?.trim()) {
-      return true
-    }
+  protected getVisibleComposerDraftForPty(ptyId: string): string | null | undefined {
     const state = this.headlessTerminals.get(ptyId)
-    return state
-      ? detectTerminalComposerDraft(state.emulator.getCursorLineContext()) !== null
-      : false
+    if (state) {
+      return projectTerminalVisibleLines(state.emulator).draft?.trim() ?? null
+    }
+    const cached = this.providerVisibleStateByPtyId.get(ptyId)
+    return cached ? (cached.draft?.trim() ?? null) : undefined
   }
 
   protected getTerminalScreenReadiness(
