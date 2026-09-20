@@ -5,6 +5,59 @@ import type { WorkerTerminalResourceRow } from '../../../../orchestration/worker
 import { completeWorkerTerminalRelease } from './worker-release-completion'
 
 describe('orchestration worker release liveness verdict', () => {
+  it('settles a certified same-incarnation exit after runtime inventory retires', async () => {
+    const resource = {
+      id: 'resource-1',
+      terminal_handle: 'term_worker',
+      pane_key: 'tab-worker:leaf-worker',
+      process_incarnation: 'pty-worker:incarnation-1',
+      host_scope: JSON.stringify({ kind: 'local', targetId: 'local' }),
+      archive_source: 'terminal',
+      archive_status: 'captured',
+      ownership_state: 'owned',
+      release_state: 'requested'
+    } as WorkerTerminalResourceRow
+    const runtime = {
+      showTerminal: vi.fn(async () => {
+        throw new Error('terminal_handle_stale')
+      }),
+      getTerminalPaneKey: vi.fn(() => null),
+      getTerminalProcessIncarnation: vi.fn(() => null),
+      getTerminalLivenessVerdict: vi.fn(() => ({ status: 'exited' })),
+      inspectTerminalProcessIncarnationLiveness: vi.fn(async () => 'exited'),
+      getOrchestrationDispatchAuthority: vi.fn(() => null),
+      closeTerminal: vi.fn(),
+      notifyMessageArrived: vi.fn()
+    } as unknown as OrcaRuntimeService
+    const db = {
+      getWorkerDispatch: vi.fn(() => ({
+        agent_terminal_handle: 'term_worker',
+        created_at: '2026-08-16T00:00:00.000Z'
+      })),
+      isDispatchProcessCurrent: vi.fn(({ paneKey, processIncarnation }) =>
+        paneKey === resource.pane_key && processIncarnation === resource.process_incarnation
+      ),
+      workerTerminalResourceHasIdentityConflict: vi.fn(() => false),
+      getWorkerTerminalArchive: vi.fn(() => ({ kind: 'transcript_pin' })),
+      commitWorkerTerminalArchiveForRelease: vi.fn(() => ({
+        ...resource,
+        release_state: 'releasing'
+      })),
+      settleWorkerTerminalRelease: vi.fn(() => ({ ...resource, release_state: 'released' })),
+      settleDeadWorkerTerminalRelease: vi.fn(() => ({
+        disposition: 'released',
+        resource: { ...resource, release_state: 'released' }
+      })),
+      markWorkerTerminalReleaseUnknown: vi.fn(),
+      recordWorkerTerminalRecoveryAttempt: vi.fn()
+    } as unknown as OrchestrationDb
+
+    await expect(
+      completeWorkerTerminalRelease({ runtime, db, dispatchId: 'ctx-worker', resource, mode: 'recovery' })
+    ).resolves.toMatchObject({ state: 'released', processAction: 'closed_exited_terminal' })
+    expect(runtime.closeTerminal).not.toHaveBeenCalled()
+  })
+
   it.each([
     {
       name: 'an explicit unverifiable verdict',
