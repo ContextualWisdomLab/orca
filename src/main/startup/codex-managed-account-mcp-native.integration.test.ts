@@ -48,7 +48,9 @@ try {
     throw error
   }
 }
-const itWithCodex = codexAvailable ? it : it.skip
+// The helper fixture is a POSIX command. Native Windows binding remains
+// deliberately fail-closed until its cmd.exe boundary is verified.
+const itWithCodexPosix = process.platform === 'win32' || !codexAvailable ? it.skip : it
 
 describe('native Codex managed-account MCP launch', () => {
   beforeEach(() => setupRuntimeHomeTest())
@@ -60,7 +62,7 @@ describe('native Codex managed-account MCP launch', () => {
     teardownRuntimeHomeTest()
   })
 
-  itWithCodex(
+  itWithCodexPosix(
     'regenerates the helper principal before a new app-server session without config overrides',
     async () => {
       const accountId = 'native-mcp-account'
@@ -103,13 +105,31 @@ describe('native Codex managed-account MCP launch', () => {
         response.writeHead(200, { 'content-type': 'application/json' })
         response.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }))
       })
-      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-      const address = server.address()
-      if (!address || typeof address === 'string') {
-        throw new Error('fixture did not bind TCP')
-      }
-
       try {
+        await new Promise<void>((resolve, reject) => {
+          const onError = (error: Error): void => {
+            server.off('listening', onListening)
+            reject(error)
+          }
+          const onListening = (): void => {
+            server.off('error', onError)
+            resolve()
+          }
+          server.once('error', onError)
+          server.once('listening', onListening)
+          try {
+            server.listen(0, '127.0.0.1')
+          } catch (error) {
+            server.off('error', onError)
+            server.off('listening', onListening)
+            reject(error)
+          }
+        })
+        const address = server.address()
+        if (!address || typeof address === 'string') {
+          throw new Error('fixture did not bind TCP')
+        }
+
         mkdirSync(getSystemCodexHomePath(), { recursive: true })
         writeFileSync(
           join(getSystemCodexHomePath(), 'config.toml'),
@@ -172,9 +192,16 @@ describe('native Codex managed-account MCP launch', () => {
           await connection.close()
         }
       } finally {
-        await new Promise<void>((resolve, reject) =>
-          server.close((error) => (error ? reject(error) : resolve()))
-        )
+        if (server.listening) {
+          await new Promise<void>((resolve) => {
+            server.close((error) => {
+              if (error && (error as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') {
+                console.warn('[codex-mcp-fixture] failed to close test server:', error)
+              }
+              resolve()
+            })
+          })
+        }
       }
     },
     60_000
