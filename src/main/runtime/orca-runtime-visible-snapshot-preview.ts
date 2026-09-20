@@ -22,7 +22,16 @@ export class OrcaRuntimeWithVisibleSnapshotPreview extends OrcaRuntimeWithCaptur
       return projectTerminalVisibleLines(state.emulator).draft?.trim() ?? null
     }
     const cached = this.providerVisibleStateByPtyId.get(ptyId)
-    return cached ? (cached.draft?.trim() ?? null) : undefined
+    if (
+      cached?.generation === this.getPtyLifecycleGeneration(ptyId) &&
+      cached.sequence >= this.getPtyOutputSequence(ptyId) &&
+      (!cached.headlessWriteChain ||
+        cached.headlessWriteChain === this.headlessTerminals.get(ptyId)?.writeChain)
+    ) {
+      return cached.draft?.trim() ?? null
+    }
+    void this.readVisibleTerminalState(ptyId).catch(() => {})
+    return undefined
   }
 
   protected getTerminalScreenReadiness(

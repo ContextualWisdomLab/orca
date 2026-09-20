@@ -728,6 +728,40 @@ describe('OrcaRuntimeService', () => {
     }
   })
 
+  it('preserves a user append after the runtime pointer and skips Enter', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = new OrcaRuntimeService(store)
+      const db = new InMemoryOrchestrationMessages()
+      const write = vi.fn().mockReturnValue(true)
+      setInMemoryOrchestrationMessages(runtime, db)
+      runtime.setPtyController({
+        write,
+        writeWithSettlement: settledWriteStub(write),
+        kill: vi.fn(),
+        getForegroundProcess: async () => null
+      })
+      syncSinglePty(runtime)
+
+      const [terminal] = (await runtime.listTerminals()).terminals
+      bindSinglePtyRun(db, terminal.handle)
+      runtime.onPtyData('pty-1', '\x1b]0;\u280b Cursor Agent\x07', 100)
+      runtime.onPtyData('pty-1', '\x1b]0;Cursor ready\x07', 101)
+      db.insertMessage({ from: 'term_sender', to: terminal.handle, subject: 'append safety' })
+      runtime.deliverPendingMessagesForHandle(terminal.handle)
+      runtime.onPtyData(
+        'pty-1',
+        '\x1b[?1049h\r\n────────\r\n❯ You have 1 orchestration message. Run `orca-dev orchestration check --run run_test` user text\x1b[3G',
+        102
+      )
+      await vi.advanceTimersByTimeAsync(500)
+
+      expect(write.mock.calls.filter(([, text]) => text === '\r')).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('still auto-submits to a non-Cursor agent when its idle title mentions Cursor Agent', async () => {
     vi.useFakeTimers()
     try {
