@@ -74,7 +74,7 @@ afterEach(() => {
 })
 
 describe('syncSystemConfigIntoManagedCodexHome', () => {
-  it('regenerates account-specific MCP helper bindings independently', () => {
+  it('regenerates account-specific MCP helper bindings where the consumer is verified', () => {
     const firstHome = join(userDataDir, 'codex-accounts', 'first', 'home')
     const secondHome = join(userDataDir, 'codex-accounts', 'second', 'home')
     mkdirSync(firstHome, { recursive: true })
@@ -102,8 +102,14 @@ describe('syncSystemConfigIntoManagedCodexHome', () => {
 
     const first = readFileSync(join(firstHome, 'config.toml'), 'utf-8')
     const second = readFileSync(join(secondHome, 'config.toml'), 'utf-8')
-    expect(first).toContain(`--home '${firstHome}'`)
-    expect(second).toContain(`--home '${secondHome}'`)
+    if (process.platform === 'win32') {
+      // Native cmd.exe quoting is intentionally fail-closed until its execution boundary is verified.
+      expect(first).toContain(MANAGED_CODEX_HOME_PLACEHOLDER)
+      expect(second).toContain(MANAGED_CODEX_HOME_PLACEHOLDER)
+    } else {
+      expect(first).toContain(`--home '${firstHome}'`)
+      expect(second).toContain(`--home '${secondHome}'`)
+    }
     expect(first).toContain('[mcp_servers.other]\ncommand = "keep-me"')
     expect(readFileSync(getSystemConfigPath(), 'utf-8')).toContain(MANAGED_CODEX_HOME_PLACEHOLDER)
   })
