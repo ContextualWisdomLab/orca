@@ -153,6 +153,7 @@ function finishPointerWriteAndStageEnter<TWaiter extends OrchestrationMessageWai
           getDb: args.deps.getDb,
           resolveSubmitTarget: args.deps.resolveSubmitTarget,
           getMessageWaiters: args.deps.getMessageWaiters,
+          getTabTitle: args.deps.getTabTitle,
           isAgentSettledForDelivery: args.deps.isAgentSettledForDelivery,
           getVisibleComposerDraft: args.deps.getVisibleComposerDraft,
           isLeafPtyProvenAbsent: args.deps.isLeafPtyProvenAbsent,

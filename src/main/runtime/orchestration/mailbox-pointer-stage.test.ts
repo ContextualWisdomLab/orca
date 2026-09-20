@@ -101,6 +101,34 @@ describe('mailbox pointer staging watermark', () => {
     }
   })
 
+  it('applies Cursor draft ownership when identity exists only on the tab title', async () => {
+    vi.useFakeTimers()
+    const db = new OrchestrationDb(':memory:')
+    const message = db.insertMessage({
+      runId: 'run_legacy_local',
+      from: 'a',
+      to: 'run:run-1',
+      subject: 'tab identity'
+    })
+    const writePty = vi.fn(() => WRITE_ACCEPTED)
+    const delivery = new OrchestrationMailboxPointerDelivery<never>({
+      ...pointerDeps(db, writePty),
+      getTabTitle: () => 'Cursor ready',
+      getVisibleComposerDraft: () => undefined,
+      redriveMailbox: vi.fn()
+    } as never)
+
+    try {
+      delivery.deliver(LEAF, { mailboxHandle: 'run:run-1', skipAbsenceProbe: true })
+      await vi.advanceTimersByTimeAsync(500)
+      expect(writePty).not.toHaveBeenCalledWith('pty-1', '\r')
+      expect(db.getMessageById(message.id)?.delivered_at).toBeNull()
+    } finally {
+      db.close()
+      vi.useRealTimers()
+    }
+  })
+
   it('submits a Cursor completion after the pointer is accepted', async () => {
     vi.useFakeTimers()
     const db = new OrchestrationDb(':memory:')

@@ -24,6 +24,7 @@ type PointerSubmitDependencies<TWaiter extends OrchestrationMessageWaiter> = {
     ptyId: string
   ) => OrchestrationMailboxPointerSubmitTarget | null
   getMessageWaiters: (mailboxHandle: string) => ReadonlySet<TWaiter> | undefined
+  getTabTitle: (tabId: string) => string | null | undefined
   isAgentSettledForDelivery: (leaf: OrchestrationMailboxLeaf) => boolean
   getVisibleComposerDraft: (ptyId: string) => string | null | undefined
   isLeafPtyProvenAbsent: (ptyId: string) => Promise<boolean>
@@ -99,11 +100,20 @@ export function submitOrchestrationMailboxPointer<TWaiter extends OrchestrationM
         input.flight.submitEnter = () => submitOrchestrationMailboxPointer(deps, input)
         deferredUntilIdle = true
       } else if (
-        [exactTarget.leaf.lastOscTitle, exactTarget.leaf.paneTitle].some(isCursorAgentTitle) &&
+        [
+          exactTarget.leaf.lastOscTitle,
+          exactTarget.leaf.paneTitle,
+          deps.getTabTitle(exactTarget.leaf.tabId)
+        ].some(isCursorAgentTitle) &&
         normalizeComposerText(deps.getVisibleComposerDraft(input.ptyId)) !==
           input.flight.pointerPayload
       ) {
-        releaseWithoutRedrive = true
+        // Keep the durable pointer pending while user-owned or unknown composer text occupies
+        // the Cursor input. A later idle edge retries after the draft is gone; never mark it
+        // delivered merely because Enter is unsafe right now.
+        deps.state.deferFlightUntilIdle(input.ptyId)
+        input.flight.submitEnter = () => submitOrchestrationMailboxPointer(deps, input)
+        deferredUntilIdle = true
       } else if (
         exactTarget.leaf.lastAgentStatusObservedLive &&
         exactTarget.leaf.lastAgentStatus === null
