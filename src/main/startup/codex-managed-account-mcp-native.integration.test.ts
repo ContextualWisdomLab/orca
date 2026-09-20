@@ -105,6 +105,8 @@ describe('native Codex managed-account MCP launch', () => {
         response.writeHead(200, { 'content-type': 'application/json' })
         response.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }))
       })
+      let primaryError: unknown
+      let primaryFailed = false
       try {
         await new Promise<void>((resolve, reject) => {
           const onError = (error: Error): void => {
@@ -191,17 +193,32 @@ describe('native Codex managed-account MCP launch', () => {
         } finally {
           await connection.close()
         }
-      } finally {
-        if (server.listening) {
-          await new Promise<void>((resolve) => {
-            server.close((error) => {
-              if (error && (error as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') {
-                console.warn('[codex-mcp-fixture] failed to close test server:', error)
-              }
-              resolve()
-            })
+      } catch (error) {
+        primaryError = error
+        primaryFailed = true
+      }
+
+      let cleanupError: unknown
+      if (server.listening) {
+        try {
+          await new Promise<void>((resolve, reject) => {
+            server.close((error) => (error ? reject(error) : resolve()))
           })
+        } catch (error) {
+          cleanupError = error
         }
+      }
+      if (primaryFailed && cleanupError !== undefined) {
+        throw new AggregateError(
+          [primaryError, cleanupError],
+          'Codex MCP fixture cleanup failed after the test failed'
+        )
+      }
+      if (primaryFailed) {
+        throw primaryError
+      }
+      if (cleanupError !== undefined) {
+        throw cleanupError
       }
     },
     60_000
