@@ -92,7 +92,7 @@ function bindBareHelperArguments(command: string, helperHome: string): string | 
       return null
     }
     if (char === '\\') {
-      if (next === '\n' || next === '\r' || next === '"' || next === "'") {
+      if (next === '\n' || next === '\r' || next === '"' || next === "'" || /[ \t]/.test(next ?? '')) {
         return null
       }
       bound += char

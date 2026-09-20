@@ -6,6 +6,8 @@ import {
   bindManagedCodexHomeInMcpHelpers
 } from './codex-managed-home-mcp-binding'
 
+const posixIt = process.platform === 'win32' ? it.skip : it
+
 describe('managed Codex MCP helper binding', () => {
   const config = [
     '[mcp_servers.time]',
@@ -39,7 +41,7 @@ describe('managed Codex MCP helper binding', () => {
     expect(bindManagedCodexHomeInMcpHelpers(ordinary, home, 'darwin')).toBe(ordinary)
   })
 
-  it('round-trips only bare placeholder arguments through a real POSIX shell', () => {
+  posixIt('round-trips only bare placeholder arguments through a real POSIX shell', () => {
     const home = "/tmp/Account's $(printf injected) `printf backtick` $files/home"
     const helpers = {
       bare: `printf '[%s]' ${MANAGED_CODEX_HOME_PLACEHOLDER}`,
@@ -69,7 +71,7 @@ describe('managed Codex MCP helper binding', () => {
     }
   })
 
-  it('rejects ambiguous shell contexts without inserting or executing managed-home bytes', () => {
+  posixIt('rejects ambiguous shell contexts without inserting or executing managed-home bytes', () => {
     const home = "/tmp/Account's $(printf injected) `printf backtick` $files/home"
     const helpers = [
       `printf '[%s]' "prefix ${MANAGED_CODEX_HOME_PLACEHOLDER} suffix"`,
@@ -98,6 +100,21 @@ describe('managed Codex MCP helper binding', () => {
     )
   })
 
+  posixIt('rejects escaped whitespace before the managed-home placeholder', () => {
+    const home = '/tmp/managed/home'
+    for (const whitespace of [' ', '\t']) {
+      const helper = `set -- --home\\${whitespace}${MANAGED_CODEX_HOME_PLACEHOLDER}; printf '<%s>\\n' "$@"`
+      const input = `[mcp_servers.probe]\nhttp_headers_helper = ${JSON.stringify(helper)}\n`
+
+      expect(bindManagedCodexHomeInMcpHelpers(input, home, 'darwin'), JSON.stringify(whitespace)).toBe(
+        input
+      )
+      expect(execFileSync('/bin/sh', ['-c', helper], { encoding: 'utf8' })).toBe(
+        `<--home${whitespace}${MANAGED_CODEX_HOME_PLACEHOLDER}>\n`
+      )
+    }
+  })
+
   it('rejects dollar expansions in helper templates', () => {
     const home = '/tmp/managed/home'
     const helpers = [
@@ -111,7 +128,7 @@ describe('managed Codex MCP helper binding', () => {
     }
   })
 
-  it('preserves quoted executable and runtime paths around a bare managed-home argument', () => {
+  posixIt('preserves quoted executable and runtime paths around a bare managed-home argument', () => {
     const home = "/tmp/space and 'quote'/$dollar/`backtick`/home"
     const helper = `"/opt/Helper Tools/headers" --runtime-dir '/run/helper files' --home ${MANAGED_CODEX_HOME_PLACEHOLDER}`
     const input = `[mcp_servers.probe]\nhttp_headers_helper = ${JSON.stringify(helper)}\n`
