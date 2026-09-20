@@ -88,6 +88,11 @@ describe('orchestration worker release liveness verdict', () => {
         disposition: 'released',
         resource: { ...resource, release_state: 'released' }
       })),
+      revertWorkerTerminalReleaseToRetained: vi.fn((_id, _reason) => ({
+        ...resource,
+        release_state: 'retained',
+        retained_reason: 'identity_unproven'
+      })),
       markWorkerTerminalReleaseUnknown: vi.fn(),
       recordWorkerTerminalRecoveryAttempt: vi.fn()
     } as unknown as OrchestrationDb
