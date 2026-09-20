@@ -128,43 +128,61 @@ function findCodexReadyPromptIndex(normalized: string): number | null {
 }
 
 function findAntigravityReadyPromptIndex(normalized: string): number | null {
-  const headerIndex = normalized.lastIndexOf('antigravity cli')
-  if (headerIndex === -1) {
+  if (!normalized.includes('antigravity cli')) {
     return null
   }
-  let lineStart = headerIndex
-  let modelIndex: number | null = null
-  let promptIndex: number | null = null
+  const caret = lastNonBlankLineBefore(normalized, normalized.length)
+  if (
+    caret === null ||
+    caret.end - caret.start !== 1 ||
+    normalized.charCodeAt(caret.start) !== 62
+  ) {
+    return null
+  }
+  const rule = lastNonBlankLineBefore(normalized, caret.start)
+  return rule !== null && isAntigravityComposerRule(normalized, rule.start, rule.end)
+    ? caret.start
+    : null
+}
 
-  // Why: ready previews can include echoed paste after the header; scan line bounds directly instead of splitting the whole tail.
-  for (let cursor = headerIndex; cursor <= normalized.length; cursor += 1) {
-    if (cursor < normalized.length && normalized.charCodeAt(cursor) !== 10) {
-      continue
+const COMPOSER_RULE_CHAR_CODE = 0x2500
+const MIN_COMPOSER_RULE_GLYPHS = 8
+
+function isAntigravityComposerRule(value: string, start: number, end: number): boolean {
+  if (end - start < MIN_COMPOSER_RULE_GLYPHS) {
+    return false
+  }
+  for (let index = start; index < end; index += 1) {
+    if (value.charCodeAt(index) !== COMPOSER_RULE_CHAR_CODE) {
+      return false
     }
+  }
+  return true
+}
+
+function lastNonBlankLineBefore(
+  value: string,
+  limit: number
+): { start: number; end: number } | null {
+  let lineEnd = limit
+  for (;;) {
+    const lineStart = value.lastIndexOf('\n', lineEnd - 1) + 1
     let trimmedStart = lineStart
-    let trimmedEnd = cursor
-    while (trimmedStart < trimmedEnd && isTerminalWaitWhitespace(normalized, trimmedStart)) {
+    let trimmedEnd = lineEnd
+    while (trimmedStart < trimmedEnd && isTerminalWaitWhitespace(value, trimmedStart)) {
       trimmedStart += 1
     }
-    while (trimmedEnd > trimmedStart && isTerminalWaitWhitespace(normalized, trimmedEnd - 1)) {
+    while (trimmedEnd > trimmedStart && isTerminalWaitWhitespace(value, trimmedEnd - 1)) {
       trimmedEnd -= 1
     }
-    if (lineStart > headerIndex && trimmedStart < trimmedEnd) {
-      if (modelIndex === null && normalized.startsWith('gemini', trimmedStart)) {
-        modelIndex = trimmedStart
-      }
-      if (
-        promptIndex === null &&
-        trimmedEnd - trimmedStart === 1 &&
-        normalized.charCodeAt(trimmedStart) === 62
-      ) {
-        promptIndex = trimmedStart
-      }
+    if (trimmedStart < trimmedEnd) {
+      return { start: trimmedStart, end: trimmedEnd }
     }
-    lineStart = cursor + 1
+    if (lineStart === 0) {
+      return null
+    }
+    lineEnd = lineStart - 1
   }
-
-  return modelIndex !== null && promptIndex !== null ? Math.max(modelIndex, promptIndex) : null
 }
 
 export const TERMINAL_WAIT_BLOCKED_SENTINEL_RE =

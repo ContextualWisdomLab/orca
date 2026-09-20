@@ -130,7 +130,7 @@ export class RuntimeTerminalWait {
         if (effectiveTimeoutMs > 0) {
           waiter.timeout = setTimeout(() => {
             this.waiters.remove(waiter)
-            reject(new Error('timeout'))
+            reject(createTerminalWaitTimeoutError(this.deps.getLivePty(handle)?.pty.connected === true))
           }, effectiveTimeoutMs)
         }
         this.waiters.add(waiter)
@@ -213,7 +213,13 @@ export class RuntimeTerminalWait {
       if (effectiveTimeoutMs > 0) {
         waiter.timeout = setTimeout(() => {
           this.waiters.remove(waiter)
-          reject(new Error('timeout'))
+          let terminalLive = false
+          try {
+            terminalLive = getTerminalState(this.deps.getLiveLeaf(handle).leaf) === 'running'
+          } catch {
+            // The handle may have gone stale while the timeout callback ran.
+          }
+          reject(createTerminalWaitTimeoutError(terminalLive))
         }, effectiveTimeoutMs)
       }
 
@@ -260,4 +266,13 @@ export class RuntimeTerminalWait {
       }
     })
   }
+}
+
+function createTerminalWaitTimeoutError(
+  terminalLive: boolean
+): Error & { code: 'terminal_wait_timeout'; terminalLive: boolean } {
+  return Object.assign(new Error('timeout'), {
+    code: 'terminal_wait_timeout' as const,
+    terminalLive
+  })
 }
