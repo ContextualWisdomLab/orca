@@ -3,6 +3,7 @@ import type { OrcaRuntimeService } from '../../../../orca-runtime'
 import type { OrchestrationDb } from '../../../../orchestration/db'
 import type { WorkerTerminalResourceRow } from '../../../../orchestration/worker-terminal-ownership'
 import { completeWorkerTerminalRelease } from './worker-release-completion'
+import { workerTerminalLeaseIsCurrent } from './worker-terminal-release-lease'
 
 describe('orchestration worker release liveness verdict', () => {
   it('requires the exited verdict before falling back to durable identity', () => {
@@ -23,40 +24,9 @@ describe('orchestration worker release liveness verdict', () => {
     } as unknown as OrcaRuntimeService
     const db = {
       getWorkerDispatch: vi.fn(() => ({ agent_terminal_handle: 'term_worker' })),
-      isDispatchProcessCurrent: vi.fn(({ paneKey, processIncarnation }) =>
-        paneKey === resource.pane_key && processIncarnation === resource.process_incarnation
-      ),
-      workerTerminalResourceHasIdentityConflict: vi.fn(() => false)
-    } as unknown as OrchestrationDb
-
-    expect(workerTerminalLeaseIsCurrent(runtime, db, 'ctx-worker', resource)).toBe(false)
-    expect(
-      workerTerminalLeaseIsCurrent(runtime, db, 'ctx-worker', resource, {
-        allowDurableExitedIdentityFallback: true
-      })
-    ).toBe(true)
-  })
-
-  it('accepts durable identity only when the release explicitly carries an exited verdict', () => {
-    const resource = {
-      id: 'resource-lease',
-      terminal_handle: 'term_worker',
-      pane_key: 'tab-worker:leaf-worker',
-      process_incarnation: 'pty-worker:incarnation-1',
-      host_scope: JSON.stringify({ kind: 'local', targetId: 'local' }),
-      ownership_state: 'owned',
-      release_state: 'requested'
-    } as WorkerTerminalResourceRow
-    const runtime = {
-      getTerminalPaneKey: vi.fn(() => null),
-      getTerminalProcessIncarnation: vi.fn(() => null),
-      getTerminalLivenessVerdict: vi.fn(() => ({ status: 'exited' })),
-      getOrchestrationDispatchAuthority: vi.fn(() => null)
-    } as unknown as OrcaRuntimeService
-    const db = {
-      getWorkerDispatch: vi.fn(() => ({ agent_terminal_handle: 'term_worker' })),
-      isDispatchProcessCurrent: vi.fn(({ paneKey, processIncarnation }) =>
-        paneKey === resource.pane_key && processIncarnation === resource.process_incarnation
+      isDispatchProcessCurrent: vi.fn(
+        ({ paneKey, processIncarnation }) =>
+          paneKey === resource.pane_key && processIncarnation === resource.process_incarnation
       ),
       workerTerminalResourceHasIdentityConflict: vi.fn(() => false)
     } as unknown as OrchestrationDb
@@ -81,18 +51,21 @@ describe('orchestration worker release liveness verdict', () => {
       ownership_state: 'owned',
       release_state: 'requested'
     } as WorkerTerminalResourceRow
+    let inventoryLookups = 0
     const runtime = {
-      showTerminal: vi.fn(async () => {
-        throw new Error('terminal_handle_stale')
-      }),
-      getTerminalPaneKey: vi.fn(() => resource.pane_key),
-      getTerminalProcessIncarnation: vi.fn(() => resource.process_incarnation),
+      showTerminal: vi.fn(async () => ({ handle: 'term_worker', connected: false })),
+      getTerminalPaneKey: vi.fn(() => (inventoryLookups++ === 0 ? resource.pane_key : null)),
+      getTerminalProcessIncarnation: vi.fn(() =>
+        inventoryLookups <= 2 ? resource.process_incarnation : null
+      ),
       getTerminalLivenessVerdict: vi.fn(() => ({ status: 'exited' })),
       inspectTerminalProcessIncarnationLiveness: vi.fn(async () => 'exited'),
       getOrchestrationDispatchAuthority: vi.fn(() => null),
-      closeTerminal: vi.fn(async () => {
-        throw new Error('terminal_handle_stale')
-      }),
+      closeTerminal: vi.fn(async () => ({
+        handle: 'term_worker',
+        tabId: 'tab-worker',
+        ptyKilled: true
+      })),
       notifyMessageArrived: vi.fn()
     } as unknown as OrcaRuntimeService
     const db = {
@@ -100,8 +73,9 @@ describe('orchestration worker release liveness verdict', () => {
         agent_terminal_handle: 'term_worker',
         created_at: '2026-08-16T00:00:00.000Z'
       })),
-      isDispatchProcessCurrent: vi.fn(({ paneKey, processIncarnation }) =>
-        paneKey === resource.pane_key && processIncarnation === resource.process_incarnation
+      isDispatchProcessCurrent: vi.fn(
+        ({ paneKey, processIncarnation }) =>
+          paneKey === resource.pane_key && processIncarnation === resource.process_incarnation
       ),
       workerTerminalResourceHasIdentityConflict: vi.fn(() => false),
       getWorkerTerminalArchive: vi.fn(() => ({ kind: 'transcript_pin' })),
@@ -119,23 +93,16 @@ describe('orchestration worker release liveness verdict', () => {
     } as unknown as OrchestrationDb
 
     await expect(
-      completeWorkerTerminalRelease({ runtime, db, dispatchId: 'ctx-worker', resource, mode: 'recovery' })
-    ).resolves.toMatchObject({ state: 'released', processAction: 'closed_exited_terminal' })
-    expect(runtime.closeTerminal).not.toHaveBeenCalled()
-    const retiredRuntime = {
-      ...runtime,
-      getTerminalPaneKey: vi.fn(() => null),
-      getTerminalProcessIncarnation: vi.fn(() => null),
-      getOrchestrationDispatchAuthority: vi.fn(() => null)
-    } as unknown as OrcaRuntimeService
-    expect(
-      workerTerminalLeaseIsCurrent(retiredRuntime, db, 'ctx-worker', resource)
-    ).toBe(false)
-    expect(
-      workerTerminalLeaseIsCurrent(retiredRuntime, db, 'ctx-worker', resource, {
-        allowDurableExitedIdentityFallback: true
+      completeWorkerTerminalRelease({
+        runtime,
+        db,
+        dispatchId: 'ctx-worker',
+        resource,
+        mode: 'recovery'
       })
-    ).toBe(true)
+    ).resolves.toMatchObject({ state: 'released', processAction: 'closed_exited_terminal' })
+    expect(runtime.closeTerminal).toHaveBeenCalledOnce()
+    expect(inventoryLookups).toBeGreaterThan(0)
   })
 
   it.each([
