@@ -89,7 +89,10 @@ export function submitOrchestrationMailboxPointer<TWaiter extends OrchestrationM
           exactTarget.leaf.lastAgentStatus === 'working')
       if (!exactTarget?.leaf.writable || !sameMailbox) {
         clearAndRedrive = true
-      } else if (!deps.isAgentSettledForDelivery(exactTarget.leaf)) {
+      } else if (
+        typeof deps.isAgentSettledForDelivery !== 'function' ||
+        !deps.isAgentSettledForDelivery(exactTarget.leaf)
+      ) {
         deps.state.deferFlightUntilIdle(input.ptyId)
         input.flight.submitEnter = () => submitOrchestrationMailboxPointer(deps, input)
         deferredUntilIdle = true

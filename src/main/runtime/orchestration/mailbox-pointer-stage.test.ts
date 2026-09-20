@@ -77,6 +77,29 @@ describe('mailbox pointer staging watermark', () => {
     }
   })
 
+  it('fails closed when the readiness dependency is missing at runtime', () => {
+    const db = new OrchestrationDb(':memory:')
+    db.insertMessage({
+      runId: 'run_legacy_local',
+      from: 'a',
+      to: 'run:run-1',
+      subject: 'missing gate'
+    })
+    const writePty = vi.fn(() => WRITE_ACCEPTED)
+    const delivery = new OrchestrationMailboxPointerDelivery<never>({
+      ...pointerDeps(db, writePty),
+      isAgentSettledForDelivery: undefined,
+      redriveMailbox: vi.fn()
+    } as never)
+
+    try {
+      delivery.deliver(LEAF, { mailboxHandle: 'run:run-1', skipAbsenceProbe: true })
+      expect(writePty).not.toHaveBeenCalled()
+    } finally {
+      db.close()
+    }
+  })
+
   it('submits a Cursor completion after the pointer is accepted', async () => {
     vi.useFakeTimers()
     const db = new OrchestrationDb(':memory:')

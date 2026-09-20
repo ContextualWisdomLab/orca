@@ -690,6 +690,36 @@ describe('OrcaRuntimeService', () => {
     }
   })
 
+  it('does not submit into a real Cursor composer draft', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = new OrcaRuntimeService(store)
+      const db = new InMemoryOrchestrationMessages()
+      const write = vi.fn().mockReturnValue(true)
+      setInMemoryOrchestrationMessages(runtime, db)
+      runtime.setPtyController({
+        write,
+        writeWithSettlement: settledWriteStub(write),
+        kill: vi.fn(),
+        getForegroundProcess: async () => null
+      })
+      syncSinglePty(runtime)
+
+      const [terminal] = (await runtime.listTerminals()).terminals
+      bindSinglePtyRun(db, terminal.handle)
+      runtime.onPtyData('pty-1', '\x1b]0;\u280b Cursor Agent\x07', 100)
+      runtime.onPtyData('pty-1', '\x1b[?1049hBuild passed\r\n────────\r\n❯ user draft\x1b[3G', 101)
+      db.insertMessage({ from: 'term_sender', to: terminal.handle, subject: 'draft safety' })
+
+      runtime.deliverPendingMessagesForHandle(terminal.handle)
+      await vi.advanceTimersByTimeAsync(500)
+
+      expect(write.mock.calls.filter(([, text]) => text === '\r')).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('still auto-submits to a non-Cursor agent when its idle title mentions Cursor Agent', async () => {
     vi.useFakeTimers()
     try {
