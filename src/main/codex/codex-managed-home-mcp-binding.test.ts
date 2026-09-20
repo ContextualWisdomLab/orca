@@ -69,6 +69,59 @@ describe('managed Codex MCP helper binding', () => {
     }
   })
 
+  it('rejects ambiguous shell contexts without inserting or executing managed-home bytes', () => {
+    const home = "/tmp/Account's $(printf injected) `printf backtick` $files/home"
+    const helpers = [
+      `printf '[%s]' "prefix ${MANAGED_CODEX_HOME_PLACEHOLDER} suffix"`,
+      `printf '[%s]' 'prefix ${MANAGED_CODEX_HOME_PLACEHOLDER} suffix'`,
+      `printf '[%s]' "$(printf '%s' ${MANAGED_CODEX_HOME_PLACEHOLDER})"`,
+      `printf '[%s]' \`printf '%s' ${MANAGED_CODEX_HOME_PLACEHOLDER}\``,
+      `printf '[%s]' \\"${MANAGED_CODEX_HOME_PLACEHOLDER}\\"`,
+      `printf '[%s]' \\\n${MANAGED_CODEX_HOME_PLACEHOLDER}`,
+      `cat <<EOF\n${MANAGED_CODEX_HOME_PLACEHOLDER}\nEOF`
+    ]
+
+    for (const helper of helpers) {
+      const input = `[mcp_servers.probe]\nhttp_headers_helper = ${JSON.stringify(helper)}\n`
+      const output = bindManagedCodexHomeInMcpHelpers(input, home, 'darwin')
+      expect(output, helper).toBe(input)
+      expect(output, helper).not.toContain(home)
+      const stdout = execFileSync('/bin/sh', ['-c', helper], { encoding: 'utf8' })
+      expect(stdout, helper).toContain(MANAGED_CODEX_HOME_PLACEHOLDER)
+      expect(stdout, helper).not.toContain('injected')
+      expect(stdout, helper).not.toContain('backtick')
+    }
+
+    const exactRepro = `printf '[%s]' "prefix ${MANAGED_CODEX_HOME_PLACEHOLDER} suffix"`
+    expect(execFileSync('/bin/sh', ['-c', exactRepro], { encoding: 'utf8' })).toBe(
+      `[prefix ${MANAGED_CODEX_HOME_PLACEHOLDER} suffix]`
+    )
+  })
+
+  it('preserves quoted executable and runtime paths around a bare managed-home argument', () => {
+    const home = "/tmp/space and 'quote'/$dollar/`backtick`/home"
+    const helper = `"/opt/Helper Tools/headers" --runtime-dir '/run/helper files' --home ${MANAGED_CODEX_HOME_PLACEHOLDER}`
+    const input = `[mcp_servers.probe]\nhttp_headers_helper = ${JSON.stringify(helper)}\n`
+    const output = bindManagedCodexHomeInMcpHelpers(input, home, 'darwin')
+    const line = output.split('\n')[1] ?? ''
+    const parsed = parseTomlSingleLineStringValue(line, line.indexOf('=') + 1)
+
+    expect(parsed?.value).toContain(`"/opt/Helper Tools/headers" --runtime-dir '/run/helper files'`)
+    const argv = execFileSync('/bin/sh', ['-c', `set -- ${parsed?.value}; printf '<%s>\\n' "$@"`], {
+      encoding: 'utf8'
+    })
+    expect(argv).toBe(
+      [
+        '</opt/Helper Tools/headers>',
+        '<--runtime-dir>',
+        '</run/helper files>',
+        '<--home>',
+        `<${home}>`,
+        ''
+      ].join('\n')
+    )
+  })
+
   it('leaves Windows helper binding unresolved without a verified command-shell boundary', () => {
     const home = "C:\\Users\\Account's %PATH% $(printf injected) `printf backtick`"
     expect(bindManagedCodexHomeInMcpHelpers(config, home, 'win32')).toBe(config)

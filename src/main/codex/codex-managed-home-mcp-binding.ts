@@ -53,15 +53,65 @@ function bindHelperLine(line: string, helperHome: string): string {
   if (!parsed || !parsed.value.includes(MANAGED_CODEX_HOME_PLACEHOLDER)) {
     return line
   }
-  // The replacement is a complete shell argument. Only replace a whitespace-delimited
-  // bare token; injecting it inside quotes or another token changes shell syntax and can
-  // execute metacharacters from the home path.
-  const tokens = parsed.value.split(/(\s+)/)
-  if (!tokens.includes(MANAGED_CODEX_HOME_PLACEHOLDER)) {
+  const bound = bindBareHelperArguments(parsed.value, helperHome)
+  if (bound === null) {
     return line
   }
-  const bound = tokens
-    .map((token) => (token === MANAGED_CODEX_HOME_PLACEHOLDER ? helperHome : token))
-    .join('')
   return `${line.slice(0, parsed.start)}"${escapeTomlBasicString(bound)}"${line.slice(parsed.end)}`
+}
+
+function bindBareHelperArguments(command: string, helperHome: string): string | null {
+  let quote: '"' | "'" | null = null
+  let bound = ''
+  for (let index = 0; index < command.length; index += 1) {
+    const rest = command.slice(index)
+    if (rest.startsWith(MANAGED_CODEX_HOME_PLACEHOLDER)) {
+      const before = command[index - 1]
+      const after = command[index + MANAGED_CODEX_HOME_PLACEHOLDER.length]
+      if (
+        quote ||
+        (before !== undefined && !/\s/.test(before)) ||
+        (after !== undefined && !/\s/.test(after))
+      ) {
+        return null
+      }
+      bound += helperHome
+      index += MANAGED_CODEX_HOME_PLACEHOLDER.length - 1
+      continue
+    }
+
+    const char = command[index] ?? ''
+    const next = command[index + 1]
+    if (
+      char === '\n' ||
+      char === '\r' ||
+      char === '`' ||
+      rest.startsWith('$(') ||
+      rest.startsWith('<<')
+    ) {
+      return null
+    }
+    if (char === '\\') {
+      if (next === '\n' || next === '\r' || next === '"' || next === "'") {
+        return null
+      }
+      bound += char
+      if (next !== undefined) {
+        bound += next
+        index += 1
+      }
+      continue
+    }
+    if (quote) {
+      if (char === quote) {
+        quote = null
+      }
+    } else if (char === '"' || char === "'") {
+      quote = char
+    } else if (/[;&|<>()]/.test(char)) {
+      return null
+    }
+    bound += char
+  }
+  return quote || !command.includes(MANAGED_CODEX_HOME_PLACEHOLDER) ? null : bound
 }
