@@ -1,4 +1,6 @@
+import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
+import { parseTomlSingleLineStringValue } from './config-toml-line-scan'
 import {
   MANAGED_CODEX_HOME_PLACEHOLDER,
   bindManagedCodexHomeInMcpHelpers
@@ -35,6 +37,41 @@ describe('managed Codex MCP helper binding', () => {
 
     const ordinary = '[mcp_servers.docs]\nhttp_headers_helper = "print-headers"\n'
     expect(bindManagedCodexHomeInMcpHelpers(ordinary, home, 'darwin')).toBe(ordinary)
+  })
+
+  it('round-trips only bare placeholder arguments through a real POSIX shell', () => {
+    const home = "/tmp/Account's $(printf injected) `printf backtick` $files/home"
+    const helpers = {
+      bare: `printf '[%s]' ${MANAGED_CODEX_HOME_PLACEHOLDER}`,
+      doubleQuoted: `printf '[%s]' "${MANAGED_CODEX_HOME_PLACEHOLDER}"`,
+      singleQuoted: `printf '[%s]' '${MANAGED_CODEX_HOME_PLACEHOLDER}'`,
+      embedded: `printf '[%s]' prefix${MANAGED_CODEX_HOME_PLACEHOLDER}suffix`
+    }
+
+    for (const [context, helper] of Object.entries(helpers)) {
+      const input = `[mcp_servers.probe]\nhttp_headers_helper = ${JSON.stringify(helper)}\n`
+      const output = bindManagedCodexHomeInMcpHelpers(input, home, 'darwin')
+      const line = output.split('\n')[1] ?? ''
+      const parsed = parseTomlSingleLineStringValue(line, line.indexOf('=') + 1)
+      expect(parsed, context).not.toBeNull()
+      const stdout = execFileSync('/bin/sh', ['-c', parsed?.value ?? ''], { encoding: 'utf8' })
+
+      expect(stdout, context).toBe(
+        context === 'bare'
+          ? `[${home}]`
+          : context === 'embedded'
+            ? `[prefix${MANAGED_CODEX_HOME_PLACEHOLDER}suffix]`
+            : `[${MANAGED_CODEX_HOME_PLACEHOLDER}]`
+      )
+      if (context !== 'bare') {
+        expect(output, context).toBe(input)
+      }
+    }
+  })
+
+  it('leaves Windows helper binding unresolved without a verified command-shell boundary', () => {
+    const home = "C:\\Users\\Account's %PATH% $(printf injected) `printf backtick`"
+    expect(bindManagedCodexHomeInMcpHelpers(config, home, 'win32')).toBe(config)
   })
 
   it('does not interpolate lookalikes outside MCP helper fields', () => {

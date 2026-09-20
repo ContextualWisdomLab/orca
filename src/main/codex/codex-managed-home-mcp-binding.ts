@@ -1,4 +1,3 @@
-import { quoteWindowsCmdArgument } from '../../shared/child-process/windows-command-line'
 import { quotePosixShell } from '../../shared/wsl-login-shell-command'
 import { parseWslUncPath } from '../../shared/wsl-paths'
 import {
@@ -21,11 +20,13 @@ export function bindManagedCodexHomeInMcpHelpers(
   let table = ''
   let scanState = createTomlLineScanState()
   const wslHome = parseWslUncPath(managedHomePath)?.linuxPath
-  const helperHome = wslHome
-    ? quotePosixShell(wslHome)
-    : platform === 'win32'
-      ? quoteWindowsCmdArgument(managedHomePath)
-      : quotePosixShell(managedHomePath)
+  // cmd.exe quoting cannot be executed and verified on non-Windows hosts. Leave the
+  // native placeholder unresolved rather than guess at a security boundary. A WSL
+  // home is consumed by the POSIX shell and uses the verified path below.
+  if (platform === 'win32' && !wslHome) {
+    return config
+  }
+  const helperHome = quotePosixShell(wslHome ?? managedHomePath)
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? ''
@@ -52,6 +53,15 @@ function bindHelperLine(line: string, helperHome: string): string {
   if (!parsed || !parsed.value.includes(MANAGED_CODEX_HOME_PLACEHOLDER)) {
     return line
   }
-  const bound = parsed.value.replaceAll(MANAGED_CODEX_HOME_PLACEHOLDER, helperHome)
+  // The replacement is a complete shell argument. Only replace a whitespace-delimited
+  // bare token; injecting it inside quotes or another token changes shell syntax and can
+  // execute metacharacters from the home path.
+  const tokens = parsed.value.split(/(\s+)/)
+  if (!tokens.includes(MANAGED_CODEX_HOME_PLACEHOLDER)) {
+    return line
+  }
+  const bound = tokens
+    .map((token) => (token === MANAGED_CODEX_HOME_PLACEHOLDER ? helperHome : token))
+    .join('')
   return `${line.slice(0, parsed.start)}"${escapeTomlBasicString(bound)}"${line.slice(parsed.end)}`
 }
