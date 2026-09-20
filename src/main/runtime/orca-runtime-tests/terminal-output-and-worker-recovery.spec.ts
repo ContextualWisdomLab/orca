@@ -653,6 +653,43 @@ describe('OrcaRuntimeService', () => {
     }
   })
 
+  it('coalesces three completed Cursor notifications into one submission', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = new OrcaRuntimeService(store)
+      const db = new InMemoryOrchestrationMessages()
+      const write = vi.fn().mockReturnValue(true)
+      setInMemoryOrchestrationMessages(runtime, db)
+      runtime.setPtyController({
+        write,
+        writeWithSettlement: settledWriteStub(write),
+        kill: vi.fn(),
+        getForegroundProcess: async () => null
+      })
+      syncSinglePty(runtime)
+
+      const [terminal] = (await runtime.listTerminals()).terminals
+      const mailbox = bindSinglePtyRun(db, terminal.handle)
+      runtime.onPtyData('pty-1', '\x1b]0;\u280b Cursor Agent\x07', 100)
+      runtime.onPtyData('pty-1', '\x1b]0;Cursor ready\x07', 101)
+      for (const subject of ['first notice', 'second notice', 'third notice']) {
+        db.insertMessage({ from: 'term_sender', to: terminal.handle, subject })
+      }
+
+      runtime.deliverPendingMessagesForHandle(terminal.handle)
+      expect(write).toHaveBeenCalledWith(
+        'pty-1',
+        expect.stringContaining('You have 3 orchestration messages')
+      )
+      await vi.advanceTimersByTimeAsync(500)
+
+      expect(write.mock.calls.filter(([, text]) => text === '\r')).toHaveLength(1)
+      expect(db.getUnreadMessages(mailbox)).toHaveLength(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('still auto-submits to a non-Cursor agent when its idle title mentions Cursor Agent', async () => {
     vi.useFakeTimers()
     try {
