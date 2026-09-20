@@ -98,6 +98,19 @@ describe('managed Codex MCP helper binding', () => {
     )
   })
 
+  it('rejects dollar expansions in helper templates', () => {
+    const home = '/tmp/managed/home'
+    const helpers = [
+      `printf '[%s]' $[ ${MANAGED_CODEX_HOME_PLACEHOLDER} ]`,
+      `printf '[%s]' \${HOME} ${MANAGED_CODEX_HOME_PLACEHOLDER}`
+    ]
+
+    for (const helper of helpers) {
+      const input = `[mcp_servers.probe]\nhttp_headers_helper = ${JSON.stringify(helper)}\n`
+      expect(bindManagedCodexHomeInMcpHelpers(input, home, 'darwin'), helper).toBe(input)
+    }
+  })
+
   it('preserves quoted executable and runtime paths around a bare managed-home argument', () => {
     const home = "/tmp/space and 'quote'/$dollar/`backtick`/home"
     const helper = `"/opt/Helper Tools/headers" --runtime-dir '/run/helper files' --home ${MANAGED_CODEX_HOME_PLACEHOLDER}`

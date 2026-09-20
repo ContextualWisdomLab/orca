@@ -86,7 +86,7 @@ function bindBareHelperArguments(command: string, helperHome: string): string | 
       char === '\n' ||
       char === '\r' ||
       char === '`' ||
-      rest.startsWith('$(') ||
+      char === '$' ||
       rest.startsWith('<<')
     ) {
       return null
