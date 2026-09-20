@@ -3,8 +3,6 @@ import type { OrcaRuntimeService } from '../../../../orca-runtime'
 import type { OrchestrationDb } from '../../../../orchestration/db'
 import type { WorkerTerminalResourceRow } from '../../../../orchestration/worker-terminal-ownership'
 import { completeWorkerTerminalRelease } from './worker-release-completion'
-import { workerTerminalLeaseIsCurrent } from './worker-terminal-release-lease'
-import { workerTerminalLeaseIsCurrent } from './worker-terminal-release-lease'
 
 describe('orchestration worker release liveness verdict', () => {
   it('requires the exited verdict before falling back to durable identity', () => {
