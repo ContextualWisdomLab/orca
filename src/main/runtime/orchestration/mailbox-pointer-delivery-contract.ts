@@ -27,7 +27,6 @@ export type PointerDeliveryDependencies<TWaiter extends OrchestrationMessageWait
   getVisibleComposerDraft: (ptyId: string) => string | null | undefined
   getMessageWaiters: (mailboxHandle: string) => ReadonlySet<TWaiter> | undefined
   getTabTitle: (tabId: string) => string | null | undefined
-  getTabTitle: (tabId: string) => string | null | undefined
   getCliCommand: (terminalHandle: string) => OrchestrationCliCommand
   getTerminalHandleForLeafKey: (leafKey: string) => string | undefined
   resolveSubmitTarget: (
