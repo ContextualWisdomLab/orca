@@ -41,6 +41,9 @@ export function useWorktreeContextMenuCommands(args: {
   const handleCopyPath = useCallback(() => {
     window.api.ui.writeClipboardText(args.worktree.path)
   }, [args])
+  const handleCopyName = useCallback(() => {
+    window.api.ui.writeClipboardText(args.worktree.displayName)
+  }, [args])
   const handleToggleRead = useCallback(() => {
     args.updateWorktreeMeta(
       args.worktree.id,
@@ -166,6 +169,7 @@ export function useWorktreeContextMenuCommands(args: {
   return {
     handleAssignWorkspaceStatus,
     handleCloseTerminals,
+    handleCopyName,
     handleCopyPath,
     handleCreateGroupDialogOpenChange,
     handleCreateGroupFromRepo,

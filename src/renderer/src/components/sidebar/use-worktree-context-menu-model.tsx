@@ -281,10 +281,10 @@ export function useWorktreeContextMenuModel({
     },
     []
   )
-
   const {
     handleAssignWorkspaceStatus,
     handleCloseTerminals,
+    handleCopyName,
     handleCopyPath,
     handleCreateGroupDialogOpenChange,
     handleCreateGroupFromRepo,
@@ -355,7 +355,6 @@ export function useWorktreeContextMenuModel({
     },
     [openPendingParentPicker]
   )
-
   return {
     activeContextWorktrees,
     allWorktrees,
@@ -378,6 +377,7 @@ export function useWorktreeContextMenuModel({
     handleAssignWorkspaceStatus,
     handleCloseAutoFocus,
     handleCloseTerminals,
+    handleCopyName,
     handleCopyPath,
     handleCreateGroupDialogOpenChange,
     handleCreateGroupFromRepo,

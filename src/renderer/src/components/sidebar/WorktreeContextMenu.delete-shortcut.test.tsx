@@ -28,12 +28,14 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
     children?: React.ReactNode
     disabled?: boolean
     variant?: string
+    onSelect?: () => void
   }) {
     return (
       <div
         data-testid="dropdown-menu-item"
         data-variant={props.variant}
         data-disabled={props.disabled}
+        onMouseDown={props.onSelect}
       >
         {props.children}
       </div>
@@ -196,6 +198,49 @@ describe('WorktreeContextMenu delete shortcut display', () => {
     const shortcuts = container.querySelectorAll('[data-testid="dropdown-menu-shortcut"]')
     const deleteShortcuts = Array.from(shortcuts).filter((el) => el.textContent === '⌘⇧⌫')
     expect(deleteShortcuts.length).toBe(1)
+  })
+
+  it('copies the workspace display name from the context menu', () => {
+    const writeClipboardText = vi.fn()
+    Object.defineProperty(window, 'api', {
+      configurable: true,
+      value: { ui: { writeClipboardText } }
+    })
+    const worktree = {
+      id: 'repo::wt-1',
+      repoId: 'repo',
+      displayName: 'Fix authentication race',
+      comment: '',
+      linkedIssue: null,
+      linkedPR: null,
+      linkedLinearIssue: null,
+      isArchived: false,
+      isUnread: false,
+      isPinned: false,
+      sortOrder: 0,
+      lastActivityAt: 0,
+      path: '/path/to/wt-1',
+      head: 'abc123',
+      branch: 'feature/auth-race',
+      isBare: false,
+      isMainWorktree: false
+    }
+
+    const container = renderContextMenu(worktree)
+    const target = container.querySelector('[data-worktree-context-menu-scope]') as HTMLElement
+    act(() => {
+      target.dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })
+      )
+    })
+    const copyNameItem = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-testid="dropdown-menu-item"]')
+    ).find((item) => item.textContent === 'Copy Name')
+
+    expect(copyNameItem).toBeTruthy()
+    act(() => copyNameItem?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(writeClipboardText).toHaveBeenCalledOnce()
+    expect(writeClipboardText).toHaveBeenCalledWith('Fix authentication race')
   })
 
   it('omits the delete shortcut on disabled Delete Worktree for primary checkout', () => {
