@@ -68,6 +68,7 @@ export async function startLocalWorker(args: {
   if (params.terminal) {
     await assertExplicitWorkerTerminalUsable({
       runtime,
+      db,
       terminal: params.terminal,
       from: params.from,
       coordinatorPane,

@@ -1,4 +1,5 @@
 import type { OrcaRuntimeService } from '../../../../orca-runtime'
+import type { OrchestrationDb } from '../../../../orchestration/db'
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
 import { isStructuredWorkerHandle } from '../../../../structured-worker-identity'
 
@@ -11,12 +12,13 @@ import { isStructuredWorkerHandle } from '../../../../structured-worker-identity
  */
 export async function assertExplicitWorkerTerminalUsable(args: {
   runtime: OrcaRuntimeService
+  db: OrchestrationDb
   terminal: string
   from: string
   coordinatorPane: string | null
   resolvedWorktreeId: string | undefined
 }): Promise<void> {
-  const { runtime, terminal, from, coordinatorPane, resolvedWorktreeId } = args
+  const { runtime, db, terminal, from, coordinatorPane, resolvedWorktreeId } = args
   const explicitTerminal = await runtime.showTerminal(terminal)
   const targetPane = runtime.getTerminalPaneKey(terminal)
   const callerPane = coordinatorPane ?? runtime.getTerminalPaneKey(from)
@@ -44,6 +46,13 @@ export async function assertExplicitWorkerTerminalUsable(args: {
     throw new OrchestrationError(
       'agent_unconfigured',
       `Terminal ${terminal} is not running a recognized agent.`
+    )
+  }
+  const activeDispatch = db.getActiveDispatchForIdentity(terminal, targetPane ?? undefined)
+  if (activeDispatch) {
+    throw new OrchestrationError(
+      'terminal_already_attached',
+      `Terminal ${terminal} is already attached to active Dispatch ${activeDispatch.id}. Send follow-up work to dispatch:${activeDispatch.id}, or wait for it to settle before using worker-start on this terminal.`
     )
   }
 }
