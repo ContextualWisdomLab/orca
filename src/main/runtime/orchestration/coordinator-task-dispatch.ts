@@ -114,6 +114,7 @@ export async function dispatchTaskToWorker(params: {
   const preamble = buildDispatchPreamble({
     taskId: task.id,
     dispatchId: dispatch.id,
+    coordinatorRunId: task.run_id,
     canDispatchSubWorkers: dispatch.depth < params.nestedWorkerMaxDepth,
     // Why (§3.4): strippedSpec drops the allow-stale-base line so the worker doesn't read the infra flag as an instruction.
     taskSpec: strippedSpec,

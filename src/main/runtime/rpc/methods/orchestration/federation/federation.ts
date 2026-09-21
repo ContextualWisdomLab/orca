@@ -65,7 +65,7 @@ export const ORCHESTRATION_FEDERATION_ATTACH_METHODS = [
       }
 
       const db = runtime.getOrchestrationDb()
-      db.createRemoteDispatchAttachment({
+      const remoteAttachment = db.createRemoteDispatchAttachment({
         runId: params.runId,
         dispatchId: params.dispatchId,
         taskId: params.taskId,
@@ -251,6 +251,7 @@ export const ORCHESTRATION_FEDERATION_ATTACH_METHODS = [
           buildDispatchPreamble({
             taskId: params.taskId,
             dispatchId: params.dispatchId,
+            coordinatorRunId: remoteAttachment.home_run_id,
             taskSpec: params.taskSpec,
             coordinatorHandle: 'Run home (relayed by Orca)',
             workerHandle: terminalHandle,

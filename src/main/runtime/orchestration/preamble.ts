@@ -8,6 +8,7 @@ export type PreambleParams = {
   // prevents stale messages from a previously-failed dispatch from completing
   // or refreshing the retry.
   dispatchId: string
+  coordinatorRunId: string
   dispatchCapability?: string
   taskSpec: string
   coordinatorHandle: string
@@ -63,6 +64,7 @@ export function buildDispatchPreamble(params: PreambleParams): string {
   // Why fenced: keeps the shell comments executable without rendering them as Chat UI headings.
   const header = `You are working inside Orca, a multi-agent IDE. You are a dispatched worker.
 Your coordinator's terminal handle is: ${params.coordinatorHandle}
+Your coordinator's durable Run address is: run:${params.coordinatorRunId}
 Your task ID is: ${params.taskId}
 
 You talk to the coordinator only through the CLI commands below. Do not use
@@ -86,6 +88,11 @@ Slack, GitHub comments, or any other channel to reach a human during the run.
   # Include BOTH taskId and dispatchId in the payload so a late completion
   # from a failed retry cannot complete the current dispatch.
   ${cli} orchestration send --from ${params.workerHandle}${capabilityFlag} --type worker_done --subject "<short status>" --body "<3-sentence summary: what you did, what you found, what's left>" --task-id ${params.taskId} --dispatch-id ${params.dispatchId} --outcome succeeded
+
+  # Send a non-lifecycle status report to the durable coordinator Run. This
+  # canonical address works when the worker runs on a paired or SSH host and
+  # the coordinator terminal handle is not locally discoverable.
+  ${cli} orchestration send --from ${params.workerHandle}${capabilityFlag} --to run:${params.coordinatorRunId} --type status --subject "<short status>" --body "<what changed or what needs attention>"
 
   # BEHAVIOR RULE: send a heartbeat every ${HEARTBEAT_INTERVAL_MIN} minutes
   # while actively working on the task. The coordinator uses this to
