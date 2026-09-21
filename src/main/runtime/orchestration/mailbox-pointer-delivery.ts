@@ -222,6 +222,14 @@ export class OrchestrationMailboxPointerDelivery<TWaiter extends OrchestrationMe
     this.state.takeDeferredEnter(ptyId)?.()
   }
 
+  observeVisibleComposerProjection(ptyId: string, draft: string | null): void {
+    const normalized = draft?.replace(/\s+/g, ' ').trim()
+    if (!normalized) {
+      return
+    }
+    this.state.takeDeferredEnterForPointer(ptyId, normalized)?.()
+  }
+
   markPtyColdParked(ptyId: string): void {
     this.coldParkedPtys.add(ptyId)
   }

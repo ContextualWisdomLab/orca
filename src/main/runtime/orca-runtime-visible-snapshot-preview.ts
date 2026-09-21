@@ -88,12 +88,18 @@ export class OrcaRuntimeWithVisibleSnapshotPreview extends OrcaRuntimeWithCaptur
     let entry: { generation: number; promise: Promise<RuntimeVisibleTerminalState | null> }
     const promise = this.loadVisibleTerminalState(ptyId)
       .then((state) => {
-        if (
-          state &&
+        const current =
+          state !== null &&
           state.generation === this.getPtyLifecycleGeneration(ptyId) &&
           state.sequence >= this.getPtyOutputSequence(ptyId)
-        ) {
+        if (current) {
           this.providerVisibleStateByPtyId.set(ptyId, state)
+          if (state.draft !== undefined) {
+            this.orchestrationMailboxPointerDelivery.observeVisibleComposerProjection(
+              ptyId,
+              state.draft?.trim() ?? null
+            )
+          }
         }
         return state
       })

@@ -79,6 +79,14 @@ export class OrchestrationMailboxPointerState {
     return submitEnter
   }
 
+  takeDeferredEnterForPointer(ptyId: string, pointerPayload: string): (() => void) | null {
+    const flight = this.flightsByPtyId.get(ptyId)
+    if (flight?.pointerPayload !== pointerPayload) {
+      return null
+    }
+    return this.takeDeferredEnter(ptyId)
+  }
+
   settleFlight(
     ptyId: string,
     flight: OrchestrationMailboxDeliveryFlight
