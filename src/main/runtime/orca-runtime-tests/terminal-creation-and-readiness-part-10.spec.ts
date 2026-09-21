@@ -109,6 +109,7 @@ describe('OrcaRuntimeService', () => {
 
     const read = await readPromise
     expect(read.source).toBe('screen-unavailable')
+    expect(read.renderable).toBe(false)
     expect(read.tail.join('\n')).not.toContain('Stale full screen')
   })
 

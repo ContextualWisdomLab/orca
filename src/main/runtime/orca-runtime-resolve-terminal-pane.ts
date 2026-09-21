@@ -192,7 +192,9 @@ export class OrcaRuntimeWithResolveTerminalPane extends OrcaRuntimeWithGetTermin
     })
     if (structured) {
       // `screen` asks for a rendered grid; there is none, and the journal is the whole record.
-      return { ...structured, source: opts.screen ? 'screen-unavailable' : 'stream' }
+      return opts.screen
+        ? { ...structured, source: 'screen-unavailable', renderable: false }
+        : { ...structured, source: 'stream' }
     }
     const pty = this.getLivePtyForHandle(handle)
     if (pty) {
@@ -217,7 +219,9 @@ export class OrcaRuntimeWithResolveTerminalPane extends OrcaRuntimeWithGetTermin
       limit: opts.limit
     })
     if (!leaf.ptyId) {
-      return { ...read, source: opts.screen ? 'screen-unavailable' : 'stream' }
+      return opts.screen
+        ? { ...read, source: 'screen-unavailable', renderable: false }
+        : { ...read, source: 'stream' }
     }
     const visibleRead = opts.screen
       ? await this.readRenderedScreen(leaf.ptyId, read, opts)
@@ -234,7 +238,7 @@ export class OrcaRuntimeWithResolveTerminalPane extends OrcaRuntimeWithGetTermin
     const visibleState = await this.readVisibleTerminalState(ptyId)
     const projection = visibleState ?? (await this.readProviderTerminalTailLines(ptyId, opts.limit))
     if (projection.lines.length === 0) {
-      return { ...read, source: 'screen-unavailable' }
+      return { ...read, source: 'screen-unavailable', renderable: false }
     }
     return buildVisibleSnapshotReadFallback(read, projection.lines, opts.limit, projection.draft)
   }
