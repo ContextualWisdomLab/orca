@@ -89,10 +89,11 @@ Slack, GitHub comments, or any other channel to reach a human during the run.
   # from a failed retry cannot complete the current dispatch.
   ${cli} orchestration send --from ${params.workerHandle}${capabilityFlag} --type worker_done --subject "<short status>" --body "<3-sentence summary: what you did, what you found, what's left>" --task-id ${params.taskId} --dispatch-id ${params.dispatchId} --outcome succeeded
 
-  # Send a non-lifecycle status report to the durable coordinator Run. This
-  # canonical address works when the worker runs on a paired or SSH host and
-  # the coordinator terminal handle is not locally discoverable.
-  ${cli} orchestration send --from ${params.workerHandle}${capabilityFlag} --to run:${params.coordinatorRunId} --type status --subject "<short status>" --body "<what changed or what needs attention>"
+  # Send a non-lifecycle status report to the durable coordinator Run named above.
+  # Omit --to/--run: a local worker resolves the Run from its active Dispatch, and a
+  # paired/SSH worker relays to the attachment home Run. Explicit --to run:<id> is
+  # rejected on federated hosts.
+  ${cli} orchestration send --from ${params.workerHandle}${capabilityFlag} --type status --subject "<short status>" --body "<what changed or what needs attention>"
 
   # BEHAVIOR RULE: send a heartbeat every ${HEARTBEAT_INTERVAL_MIN} minutes
   # while actively working on the task. The coordinator uses this to

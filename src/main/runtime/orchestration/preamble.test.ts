@@ -77,7 +77,8 @@ describe('buildDispatchPreamble', () => {
     const result = buildDispatchPreamble(baseParams())
 
     expect(result).toContain('durable Run address is: run:run_example123')
-    expect(result).toContain('--to run:run_example123 --type status')
+    expect(result).toContain('--type status')
+    expect(result).not.toContain('--to run:run_example123 --type status')
   })
 
   it(
