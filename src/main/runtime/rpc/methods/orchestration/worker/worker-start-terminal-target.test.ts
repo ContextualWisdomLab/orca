@@ -48,6 +48,8 @@ describe('worker-start --terminal target', () => {
       spec: 'second assignment',
       runId: harness.activeRunId
     })
+    vi.mocked(harness.runtime.waitForTerminal).mockClear()
+    vi.mocked(harness.runtime.sendTerminalAgentPrompt).mockClear()
 
     await expect(
       harness.call('orchestration.workerStart', {
@@ -60,6 +62,8 @@ describe('worker-start --terminal target', () => {
       message: expect.stringContaining(`dispatch:${first.dispatchId}`)
     })
     expect(harness.db.getDispatchContext(secondTask.id)).toBeUndefined()
+    expect(harness.runtime.waitForTerminal).not.toHaveBeenCalled()
+    expect(harness.runtime.sendTerminalAgentPrompt).not.toHaveBeenCalled()
   })
 })
 
