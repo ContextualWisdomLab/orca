@@ -16,6 +16,24 @@ import {
 import { withTimeout } from './runtime-async-boundaries'
 
 export class OrcaRuntimeWithVisibleSnapshotPreview extends OrcaRuntimeWithCaptureProviderTerminalBuffer {
+  protected getVisibleComposerDraftForPty(ptyId: string): string | null | undefined {
+    const state = this.headlessTerminals.get(ptyId)
+    if (state) {
+      return projectTerminalVisibleLines(state.emulator).draft?.trim() ?? null
+    }
+    const cached = this.providerVisibleStateByPtyId.get(ptyId)
+    if (
+      cached?.generation === this.getPtyLifecycleGeneration(ptyId) &&
+      cached.sequence >= this.getPtyOutputSequence(ptyId) &&
+      (!cached.headlessWriteChain ||
+        cached.headlessWriteChain === this.headlessTerminals.get(ptyId)?.writeChain)
+    ) {
+      return cached.draft?.trim() ?? null
+    }
+    void this.readVisibleTerminalState(ptyId).catch(() => {})
+    return undefined
+  }
+
   protected getTerminalScreenReadiness(
     ptyId: string | null | undefined,
     retainedText: string
@@ -70,12 +88,18 @@ export class OrcaRuntimeWithVisibleSnapshotPreview extends OrcaRuntimeWithCaptur
     let entry: { generation: number; promise: Promise<RuntimeVisibleTerminalState | null> }
     const promise = this.loadVisibleTerminalState(ptyId)
       .then((state) => {
-        if (
-          state &&
+        const current =
+          state !== null &&
           state.generation === this.getPtyLifecycleGeneration(ptyId) &&
           state.sequence >= this.getPtyOutputSequence(ptyId)
-        ) {
+        if (current) {
           this.providerVisibleStateByPtyId.set(ptyId, state)
+          if (state.draft !== undefined) {
+            this.orchestrationMailboxPointerDelivery.observeVisibleComposerProjection(
+              ptyId,
+              state.draft?.trim() ?? null
+            )
+          }
         }
         return state
       })
