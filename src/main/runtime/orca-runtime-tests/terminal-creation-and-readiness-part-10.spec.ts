@@ -159,6 +159,9 @@ describe('OrcaRuntimeService', () => {
 
     const [read, shown] = await Promise.all([readPromise, showPromise])
     expect(read.tail).toEqual(['Shared TUI frame'])
+    expect(read.source).toBe('screen')
+    // Ordinary reads may use a visible snapshot; only --screen marks renderable.
+    expect(read.renderable).toBeUndefined()
     expect(shown.preview).toBe('Shared TUI frame')
     expect(serializeProviderBuffer).toHaveBeenCalledOnce()
   })
@@ -502,6 +505,15 @@ describe('OrcaRuntimeService', () => {
 
     expect(read).toMatchObject({
       source: 'screen',
+      tail: ['Build passed', '────────', '❯'],
+      draft: 'proceed with the release\nand close the pull request'
+    })
+    expect(read.renderable).toBeUndefined()
+
+    const screenRead = await runtime.readTerminal(terminal.handle, { screen: true })
+    expect(screenRead).toMatchObject({
+      source: 'screen',
+      renderable: true,
       tail: ['Build passed', '────────', '❯'],
       draft: 'proceed with the release\nand close the pull request'
     })

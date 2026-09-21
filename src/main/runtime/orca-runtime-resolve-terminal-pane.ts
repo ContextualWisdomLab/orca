@@ -240,6 +240,9 @@ export class OrcaRuntimeWithResolveTerminalPane extends OrcaRuntimeWithGetTermin
     if (projection.lines.length === 0) {
       return { ...read, source: 'screen-unavailable', renderable: false }
     }
-    return buildVisibleSnapshotReadFallback(read, projection.lines, opts.limit, projection.draft)
+    return {
+      ...buildVisibleSnapshotReadFallback(read, projection.lines, opts.limit, projection.draft),
+      renderable: true
+    }
   }
 }

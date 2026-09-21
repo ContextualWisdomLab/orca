@@ -155,7 +155,6 @@ export function buildVisibleSnapshotReadFallback(
       read.limited || lineBoundedTail.length < visibleLines.length || charBoundedTail.limited,
     returnedLineCount: charBoundedTail.tail.length,
     source: 'screen',
-    renderable: true,
     ...(draft ? { draft } : {})
   }
 }
