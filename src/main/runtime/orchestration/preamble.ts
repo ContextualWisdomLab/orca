@@ -8,6 +8,8 @@ export type PreambleParams = {
   // prevents stale messages from a previously-failed dispatch from completing
   // or refreshing the retry.
   dispatchId: string
+  // Why: workers address the Run, not the coordinator terminal. Federated
+  // attachments pass the persisted home Run, including a compatibility stub.
   coordinatorRunId: string
   dispatchCapability?: string
   taskSpec: string
@@ -42,11 +44,10 @@ export type PreambleParams = {
 // cadence tuning is a single-line change (Q1 in DESIGN_DOC_PREAMBLE_FIX.md).
 const HEARTBEAT_INTERVAL_MIN = 5
 
-// Why: the dispatch preamble teaches agents about Orca's CLI commands for
-// structured communication. Behavioral rules (body summary, heartbeat cadence,
-// no-AskUserQuestion) live as inline comments above the relevant CLI example,
-// not as a separate prose block — LLM readers anchor on examples and skim
-// trailing prose, so rules must land at the point of use.
+/**
+ * Teaches a dispatched worker the CLI commands for structured communication.
+ * Rules sit on the example they govern; a trailing prose block gets skimmed.
+ */
 export function buildDispatchPreamble(params: PreambleParams): string {
   // Why: in dev mode, agents must use orca-dev to connect to the dev runtime's
   // socket. Without this, agents inside the dev Electron app would call the
@@ -90,9 +91,10 @@ Slack, GitHub comments, or any other channel to reach a human during the run.
   ${cli} orchestration send --from ${params.workerHandle}${capabilityFlag} --type worker_done --subject "<short status>" --body "<3-sentence summary: what you did, what you found, what's left>" --task-id ${params.taskId} --dispatch-id ${params.dispatchId} --outcome succeeded
 
   # Send a non-lifecycle status report to the durable coordinator Run named above.
-  # Omit --to/--run: a local worker resolves the Run from its active Dispatch, and a
-  # paired/SSH worker relays to the attachment home Run. Explicit --to run:<id> is
-  # rejected on federated hosts.
+  # Same-host only. A paired or SSH host rejects --to and --run; use the next command there.
+  ${cli} orchestration send --from ${params.workerHandle}${capabilityFlag} --to run:${params.coordinatorRunId} --type status --subject "<short status>" --body "<what changed or what needs attention>"
+
+  # Paired or SSH worker. Omit --to and --run; the attachment relays to the Run above.
   ${cli} orchestration send --from ${params.workerHandle}${capabilityFlag} --type status --subject "<short status>" --body "<what changed or what needs attention>"
 
   # BEHAVIOR RULE: send a heartbeat every ${HEARTBEAT_INTERVAL_MIN} minutes

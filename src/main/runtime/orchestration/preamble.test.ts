@@ -4,6 +4,7 @@ import { unified } from 'unified'
 import { describe, expect, it } from 'vitest'
 import { buildDispatchPreamble } from './preamble'
 
+/** Shared preamble inputs. Overrides replace one field, including the coordinator Run. */
 function baseParams(overrides: Partial<Parameters<typeof buildDispatchPreamble>[0]> = {}) {
   return {
     taskId: 'task_abc123',
@@ -73,12 +74,15 @@ describe('buildDispatchPreamble', () => {
     expect(result).not.toContain('orchestration send --to term_coord')
   })
 
-  it('gives paired workers a canonical route back to the coordinator Run', () => {
+  it('gives workers a canonical route back to the coordinator Run', () => {
     const result = buildDispatchPreamble(baseParams())
+    const statusLines = result.split('\n').filter((line) => line.includes('--type status'))
 
     expect(result).toContain('durable Run address is: run:run_example123')
-    expect(result).toContain('--type status')
-    expect(result).not.toContain('--to run:run_example123 --type status')
+    expect(statusLines).toHaveLength(2)
+    expect(statusLines[0]).toContain('--to run:run_example123 --type status')
+    expect(statusLines[1]).not.toContain('--to')
+    expect(statusLines[1]).not.toContain('--run')
   })
 
   it(
@@ -97,13 +101,13 @@ describe('buildDispatchPreamble', () => {
       .split('\n')
       .filter((line) => line.trimStart().startsWith('orca orchestration'))
 
-    expect(commandLines).toHaveLength(6)
+    expect(commandLines).toHaveLength(7)
     expect(result).not.toContain('\\\n')
     expect(commandLines.filter((line) => line.includes('--type worker_done'))).toHaveLength(1)
     expect(commandLines.filter((line) => line.includes('--type heartbeat'))).toHaveLength(1)
     expect(commandLines.filter((line) => line.includes('orchestration ask'))).toHaveLength(1)
     expect(commandLines.filter((line) => line.includes('--type escalation'))).toHaveLength(1)
-    expect(commandLines.filter((line) => line.includes('--type status'))).toHaveLength(1)
+    expect(commandLines.filter((line) => line.includes('--type status'))).toHaveLength(2)
   })
 
   it('fences shell comments so Markdown does not promote them to headings', () => {
@@ -195,7 +199,7 @@ describe('buildDispatchPreamble', () => {
       dispatchCapability: 'dcap_test_secret'
     })
 
-    expect(result.match(/--dispatch-capability dcap_test_secret/g)).toHaveLength(5)
+    expect(result.match(/--dispatch-capability dcap_test_secret/g)).toHaveLength(6)
     expect(result).not.toContain('"dispatchCapability"')
   })
 

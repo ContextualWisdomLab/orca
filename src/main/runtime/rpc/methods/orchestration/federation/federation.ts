@@ -29,6 +29,9 @@ export const ORCHESTRATION_FEDERATION_ATTACH_METHODS = [
   defineMethod({
     name: 'orchestration.federationAttachStart',
     params: FederationAttachStartParams,
+    /**
+     * Attaches a remote worker and teaches it the persisted home Run, including a compatibility stub.
+     */
     handler: async (params, { runtime, orchestrationMutation }) => {
       if (!orchestrationMutation) {
         throw new OrchestrationError(

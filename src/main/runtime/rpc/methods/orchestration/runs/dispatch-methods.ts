@@ -14,6 +14,9 @@ export const ORCHESTRATION_DISPATCH_METHODS = [
   defineMethod({
     name: 'orchestration.dispatch',
     params: DispatchParams,
+    /**
+     * Dry-run and live dispatch both name this task's Run in the worker preamble.
+     */
     handler: async (
       params,
       {
@@ -187,6 +190,9 @@ export const ORCHESTRATION_DISPATCH_METHODS = [
   defineMethod({
     name: 'orchestration.dispatchShow',
     params: DispatchShowParams,
+    /**
+     * Regenerates the worker preamble from the current task, including its Run.
+     */
     handler: (params, { runtime }) => {
       const db = runtime.getOrchestrationDb()
       if (!params.task) {

@@ -59,6 +59,10 @@ export async function listAvailableWorkerTerminals(
   }
 }
 
+/**
+ * Injects one task's preamble, including its coordinator Run, into a worker terminal.
+ * A stale base is refused before a dispatch row exists, so the refusal does not burn a circuit-breaker attempt.
+ */
 export async function dispatchTaskToWorker(params: {
   db: OrchestrationDb
   runtime: CoordinatorRuntime
