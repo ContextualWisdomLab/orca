@@ -255,6 +255,7 @@ export const ORCHESTRATION_FEDERATION_ATTACH_METHODS = [
             taskId: params.taskId,
             dispatchId: params.dispatchId,
             coordinatorRunId: remoteAttachment.home_run_id,
+            explicitRunTarget: false,
             taskSpec: params.taskSpec,
             coordinatorHandle: 'Run home (relayed by Orca)',
             workerHandle: terminalHandle,

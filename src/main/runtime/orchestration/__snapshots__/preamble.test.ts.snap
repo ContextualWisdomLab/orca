@@ -29,11 +29,7 @@ Slack, GitHub comments, or any other channel to reach a human during the run.
   orca orchestration send --from term_WORKER --type worker_done --subject "<short status>" --body "<3-sentence summary: what you did, what you found, what's left>" --task-id task_SNAP --dispatch-id ctx_SNAP --outcome succeeded
 
   # Send a non-lifecycle status report to the durable coordinator Run named above.
-  # Same-host only. A paired or SSH host rejects --to and --run; use the next command there.
   orca orchestration send --from term_WORKER --to run:run_SNAP --type status --subject "<short status>" --body "<what changed or what needs attention>"
-
-  # Paired or SSH worker. Omit --to and --run; the attachment relays to the Run above.
-  orca orchestration send --from term_WORKER --type status --subject "<short status>" --body "<what changed or what needs attention>"
 
   # BEHAVIOR RULE: send a heartbeat every 5 minutes
   # while actively working on the task. The coordinator uses this to

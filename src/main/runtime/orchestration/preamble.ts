@@ -36,6 +36,8 @@ export type PreambleParams = {
   workerKind?: 'prompt-returning-agent' | 'bare-shell'
   // Why gated: advertising a verb the depth cap will reject just burns a turn.
   canDispatchSubWorkers?: boolean
+  // Why: a paired host rejects --to/--run. Only same-host preambles name the Run explicitly.
+  explicitRunTarget?: boolean
 }
 
 // Why: 5 minutes is frequent enough that the coordinator's stale-heartbeat
@@ -60,6 +62,15 @@ export function buildDispatchPreamble(params: PreambleParams): string {
   const capabilityFlag = params.dispatchCapability
     ? ` --dispatch-capability ${params.dispatchCapability}`
     : ''
+  // Same-host workers address the Run explicitly. Paired hosts reject that form,
+  // so their preamble carries only the attachment-home recipe.
+  const statusRecipe =
+    params.explicitRunTarget === false
+      ? `# Send a non-lifecycle status report to the durable coordinator Run named above.
+  # Omit --to and --run; this host relays the report to that Run.
+  ${cli} orchestration send --from ${params.workerHandle}${capabilityFlag} --type status --subject "<short status>" --body "<what changed or what needs attention>"`
+      : `# Send a non-lifecycle status report to the durable coordinator Run named above.
+  ${cli} orchestration send --from ${params.workerHandle}${capabilityFlag} --to run:${params.coordinatorRunId} --type status --subject "<short status>" --body "<what changed or what needs attention>"`
 
   // Why: one-line recipes paste unchanged in POSIX shells, PowerShell, and cmd.exe.
   // Why fenced: keeps the shell comments executable without rendering them as Chat UI headings.
@@ -90,12 +101,7 @@ Slack, GitHub comments, or any other channel to reach a human during the run.
   # from a failed retry cannot complete the current dispatch.
   ${cli} orchestration send --from ${params.workerHandle}${capabilityFlag} --type worker_done --subject "<short status>" --body "<3-sentence summary: what you did, what you found, what's left>" --task-id ${params.taskId} --dispatch-id ${params.dispatchId} --outcome succeeded
 
-  # Send a non-lifecycle status report to the durable coordinator Run named above.
-  # Same-host only. A paired or SSH host rejects --to and --run; use the next command there.
-  ${cli} orchestration send --from ${params.workerHandle}${capabilityFlag} --to run:${params.coordinatorRunId} --type status --subject "<short status>" --body "<what changed or what needs attention>"
-
-  # Paired or SSH worker. Omit --to and --run; the attachment relays to the Run above.
-  ${cli} orchestration send --from ${params.workerHandle}${capabilityFlag} --type status --subject "<short status>" --body "<what changed or what needs attention>"
+  ${statusRecipe}
 
   # BEHAVIOR RULE: send a heartbeat every ${HEARTBEAT_INTERVAL_MIN} minutes
   # while actively working on the task. The coordinator uses this to
