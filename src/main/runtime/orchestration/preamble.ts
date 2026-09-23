@@ -62,15 +62,18 @@ export function buildDispatchPreamble(params: PreambleParams): string {
   const capabilityFlag = params.dispatchCapability
     ? ` --dispatch-capability ${params.dispatchCapability}`
     : ''
-  // Same-host workers address the Run explicitly. Paired hosts reject that form,
-  // so their preamble carries only the attachment-home recipe.
-  const statusRecipe =
-    params.explicitRunTarget === false
-      ? `# Send a non-lifecycle status report to the durable coordinator Run named above.
+  // Same-host workers address a shell-safe Run id explicitly. Paired hosts reject
+  // --to/--run, and an unsafe id would change how the shell parses the recipe.
+  const explicitRunTarget =
+    params.explicitRunTarget !== false && /^[A-Za-z0-9_]+$/.test(params.coordinatorRunId)
+      ? ` --to run:${params.coordinatorRunId}`
+      : ''
+  const statusRecipe = explicitRunTarget
+    ? `# Send a non-lifecycle status report to the durable coordinator Run named above.
+  ${cli} orchestration send --from ${params.workerHandle}${capabilityFlag}${explicitRunTarget} --type status --subject "<short status>" --body "<what changed or what needs attention>"`
+    : `# Send a non-lifecycle status report to the durable coordinator Run named above.
   # Omit --to and --run; this host relays the report to that Run.
   ${cli} orchestration send --from ${params.workerHandle}${capabilityFlag} --type status --subject "<short status>" --body "<what changed or what needs attention>"`
-      : `# Send a non-lifecycle status report to the durable coordinator Run named above.
-  ${cli} orchestration send --from ${params.workerHandle}${capabilityFlag} --to run:${params.coordinatorRunId} --type status --subject "<short status>" --body "<what changed or what needs attention>"`
 
   // Why: one-line recipes paste unchanged in POSIX shells, PowerShell, and cmd.exe.
   // Why fenced: keeps the shell comments executable without rendering them as Chat UI headings.

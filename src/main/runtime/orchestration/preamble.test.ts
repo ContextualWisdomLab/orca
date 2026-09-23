@@ -82,6 +82,16 @@ describe('buildDispatchPreamble', () => {
     expect(statusLines).toEqual([expect.stringContaining('--to run:run_example123 --type status')])
   })
 
+  it('omits --to when the Run id is not a shell token', () => {
+    const result = buildDispatchPreamble(baseParams({ coordinatorRunId: 'run_peer;touch owned' }))
+    const statusLines = result.split('\n').filter((line) => line.includes('--type status'))
+
+    expect(result).toContain('durable Run address is: run:run_peer;touch owned')
+    expect(statusLines).toHaveLength(1)
+    expect(statusLines[0]).not.toContain('--to')
+    expect(statusLines[0]).not.toContain(';')
+  })
+
   it('omits the rejected explicit target from a paired-host preamble', () => {
     const result = buildDispatchPreamble(baseParams({ explicitRunTarget: false }))
     const statusLines = result.split('\n').filter((line) => line.includes('--type status'))

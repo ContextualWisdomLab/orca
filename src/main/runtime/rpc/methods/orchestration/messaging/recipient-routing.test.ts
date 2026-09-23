@@ -20,6 +20,40 @@ type GroupSendResult = {
   warnings?: SendWarning[]
 }
 
+function isSendResult(value: unknown): value is SendResult {
+  if (typeof value !== 'object' || value === null || !('message' in value)) {
+    return false
+  }
+  const message = value.message
+  return (
+    typeof message === 'object' &&
+    message !== null &&
+    'id' in message &&
+    typeof message.id === 'string' &&
+    'run_id' in message &&
+    typeof message.run_id === 'string' &&
+    'to_handle' in message &&
+    typeof message.to_handle === 'string'
+  )
+}
+
+function isIdList(value: unknown): value is { messages: { id: string }[] } {
+  if (typeof value !== 'object' || value === null || !('messages' in value)) {
+    return false
+  }
+  const messages = value.messages
+  return (
+    Array.isArray(messages) &&
+    messages.every(
+      (message) =>
+        typeof message === 'object' &&
+        message !== null &&
+        'id' in message &&
+        typeof message.id === 'string'
+    )
+  )
+}
+
 describe('orchestration recipient routing oracle', () => {
   const harness = createOrchestrationRpcHarness()
   let db: OrchestrationDb
@@ -242,6 +276,59 @@ describe('orchestration recipient routing oracle', () => {
       ctx
     )) as { messages: { id: string }[] }
     expect(check.messages.map((message) => message.id)).toEqual([result.message.id])
+  })
+
+  it('delivers to the Run a lead coordinates now when that handle also once coordinated the sender Run', async () => {
+    setup()
+    db.bindRun({
+      runId: senderRunId,
+      coordinatorHandle: 'term_lead',
+      coordinatorPaneKey: 'tab_lead_old:leaf_old'
+    })
+    db.bindRun({
+      runId: senderRunId,
+      coordinatorHandle: 'term_coord',
+      coordinatorPaneKey: harness.coordinatorPaneKey
+    })
+    const leadPane = 'tab_lead:leaf_lead'
+    const leadRun = db.createRun({
+      objective: 'Lead run',
+      coordinatorHandle: 'term_lead',
+      coordinatorPaneKey: leadPane
+    })
+    mockTerminalPaneKeys((handle) => (handle === 'term_coord' ? harness.coordinatorPaneKey : null))
+
+    const sent = await call({
+      from: 'term_coord',
+      to: 'term_lead',
+      subject: 'resume research'
+    })
+    if (!isSendResult(sent)) {
+      throw new Error('send receipt has no message')
+    }
+
+    expect(sent.message).toMatchObject({
+      run_id: leadRun.id,
+      to_handle: `run:${leadRun.id}`
+    })
+    expect(sent.message.run_id).not.toBe(senderRunId)
+    expect(db.getUnreadMessages('term_lead')).toEqual([])
+    mockTerminalPaneKeys((handle) =>
+      handle === 'term_coord'
+        ? harness.coordinatorPaneKey
+        : handle === 'term_lead'
+          ? leadPane
+          : null
+    )
+    const checked = await harness.call(
+      'orchestration.check',
+      { terminal: 'term_lead', peek: true },
+      ctx
+    )
+    if (!isIdList(checked)) {
+      throw new Error('check receipt has no messages')
+    }
+    expect(checked.messages.map((message) => message.id)).toEqual([sent.message.id])
   })
 
   it('keeps same-Run historical coordinator routing from the canonical mailbox change', async () => {
