@@ -41,6 +41,7 @@ function bindHomeArgument(
   const windows = win32.isAbsolute(home) && !posix.isAbsolute(home)
   const executableStart = command.search(/\S/)
   let quote: string | null = null
+  let atArgumentStart = true
   let result = ''
   for (let index = 0; index < command.length; index += 1) {
     const char = command[index] ?? ''
@@ -49,7 +50,7 @@ function bindHomeArgument(
       return result + command.slice(index)
     }
     const match =
-      !quote && index > executableStart && /[ \t]/.test(command[index - 1] ?? '')
+      !quote && atArgumentStart && index > executableStart
         ? spellings.find(
             (spelling) =>
               command.startsWith(spelling, index) &&
@@ -60,9 +61,12 @@ function bindHomeArgument(
     if (match) {
       result += quoteRuntimeHome(runtimeHomePath)
       index += match.length - 1
+      atArgumentStart = false
     } else if (!windows && char === '\\' && quote !== "'") {
       result += char + (command[index + 1] ?? '')
       index += 1
+      // Escaped whitespace belongs to this argument; it is not a token boundary.
+      atArgumentStart = false
     } else {
       if (char === quote) {
         quote = null
@@ -70,6 +74,7 @@ function bindHomeArgument(
         quote = char
       }
       result += char
+      atArgumentStart = !quote && /[ \t]/.test(char)
     }
   }
   return result

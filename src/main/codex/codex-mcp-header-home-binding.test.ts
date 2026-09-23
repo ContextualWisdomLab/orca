@@ -98,6 +98,15 @@ describe('bindCodexMcpHeaderHelperHome', () => {
     const input = config(command)
     expect(bindCodexMcpHeaderHelperHome(input, source, '/a')).toBe(input)
   })
+  it.each([' ', '\t'])('preserves a home substring after escaped whitespace %j', (space) => {
+    const input = config(`helper prefix\\${space}${source}`)
+    expect(bindCodexMcpHeaderHelperHome(input, source, '/accounts/alice/home')).toBe(input)
+  })
+  it('recognizes a real argument boundary after an escaped backslash', () => {
+    expect(
+      commandFrom(bindCodexMcpHeaderHelperHome(config(`helper prefix\\\\ ${source}`), source, '/a'))
+    ).toBe("helper prefix\\\\ '/a'")
+  })
   it('does not rewrite other settings, subtables, comments or multiline data', () => {
     const input = [
       'model = "unchanged"',
