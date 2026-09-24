@@ -371,6 +371,35 @@ describe('orchestration recipient routing oracle', () => {
     expect(db.getInbox(100)).toEqual([])
   })
 
+  it('uses an explicit Run when one handle currently coordinates more than one', async () => {
+    setup()
+    db.createRun({
+      objective: 'First owner',
+      coordinatorHandle: 'term_ambiguous',
+      coordinatorPaneKey: 'tab_first:leaf_first'
+    })
+    const second = db.createRun({
+      objective: 'Second owner',
+      coordinatorHandle: 'term_ambiguous',
+      coordinatorPaneKey: 'tab_second:leaf_second'
+    })
+
+    const sent = await call({
+      from: 'term_coord',
+      to: 'term_ambiguous',
+      run: second.id,
+      subject: 'named run'
+    })
+    if (!isSendResult(sent)) {
+      throw new Error('send receipt has no message')
+    }
+
+    expect(sent.message).toMatchObject({
+      run_id: second.id,
+      to_handle: `run:${second.id}`
+    })
+  })
+
   it('partially delivers @worktree:<id> when a listed recipient disappears before routing', async () => {
     setup()
     vi.spyOn(runtime, 'listTerminals').mockResolvedValue({

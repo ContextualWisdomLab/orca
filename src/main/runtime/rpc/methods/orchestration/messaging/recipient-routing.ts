@@ -82,6 +82,10 @@ export function resolveBareOrchestrationRecipient(params: {
     .getRunMailboxOwnerIdsForHandle(handle, params.legacyAdoptedMailboxOwner)
     .filter((runId) => db.getRun(runId)?.coordinator_handle === handle)
   if (currentRunIds.length > 1) {
+    const namedRunId = params.explicitRunId
+    if (namedRunId !== undefined && currentRunIds.includes(namedRunId)) {
+      return { ok: true, to: `run:${namedRunId}`, runId: namedRunId }
+    }
     return ambiguous(
       handle,
       currentRunIds.map((runId) => `run:${runId}`)
