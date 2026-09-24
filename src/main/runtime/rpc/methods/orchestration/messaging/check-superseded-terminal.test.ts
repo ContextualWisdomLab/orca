@@ -70,6 +70,21 @@ describe('orchestration.check from a terminal whose Attempt was superseded', () 
     expect(db.getUnreadMessages('term_old')).toEqual([])
   })
 
+  it('stays fenced when the type filter hides the only unread message', async () => {
+    retriedOntoAnotherTerminal()
+    db.insertMessage({
+      from: 'term_coord',
+      to: 'term_old',
+      subject: 'status ping',
+      type: 'status'
+    })
+
+    await expect(check('term_old', PANE_OLD, { types: 'worker_done' })).rejects.toMatchObject({
+      code: 'consumer_fenced'
+    })
+    expect(db.getUnreadMessages('term_old')).toHaveLength(1)
+  })
+
   it('tells the old worker it lost the Dispatch instead of answering "no mail"', async () => {
     retriedOntoAnotherTerminal()
 

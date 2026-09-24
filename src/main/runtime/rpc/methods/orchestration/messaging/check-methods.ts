@@ -93,7 +93,7 @@ export const ORCHESTRATION_CHECK_METHODS = [
       if (
         settledDispatch &&
         isSupersededDispatch(settledDispatch) &&
-        db.getUnreadMessages(handle).length === 0
+        db.getUnreadMessages(handle, typeFilter).length === 0
       ) {
         throw dispatchFenced()
       }
