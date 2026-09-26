@@ -23,9 +23,75 @@ export function assertDispatchMailboxDeliverable(db: OrchestrationDb, dispatchId
   )
 }
 
+/**
+ * Route mail for an active Dispatch whose assignee pane now coordinates its own Run.
+ *
+ * Why: `check` on a Run-bound pane reads only that Run's mailbox, so mail left on
+ * `dispatch:<id>` is never returned to it. A bare handle for that pane already routes to
+ * `run:<bound>`; the Dispatch address follows the same rule.
+ */
+export function resolveRunBoundDispatchRecipient(
+  db: OrchestrationDb,
+  dispatchId: string
+): { to: string; runId: string; warning: SendRecipientWarning } | undefined {
+  const dispatch = db.getDispatchContextById(dispatchId)
+  if (
+    !dispatch ||
+    !ACTIVE_DISPATCH_STATUSES.includes(dispatch.status) ||
+    !dispatch.assignee_pane_key
+  ) {
+    return undefined
+  }
+  const boundRun = db.getCurrentRunForPane(dispatch.assignee_pane_key)
+  if (!boundRun || boundRun.id === dispatch.run_id) {
+    return undefined
+  }
+  const recipient = `dispatch:${dispatchId}`
+  return {
+    to: `run:${boundRun.id}`,
+    runId: boundRun.id,
+    warning: {
+      code: 'recipient_run_bound_redirect',
+      recipient,
+      message: `${recipient} is assigned to a terminal that now coordinates Run ${boundRun.id}; delivered to run:${boundRun.id}, the mailbox that terminal reads.`
+    }
+  }
+}
+
+/**
+ * Resolve where a reply to `originalFrom` is stored, using the same rules as `send`.
+ *
+ * Why: a reply stored on a raw terminal handle is never returned to a Run-bound pane, whose
+ * `check` and waiters read only its Run mailbox. Unresolvable senders keep the raw handle.
+ */
+export function resolveReplyRecipient(params: {
+  runtime: OrcaRuntimeService
+  db: OrchestrationDb
+  originalFrom: string
+  originalRunId: string | undefined
+}): { to: string; runId: string | undefined } {
+  const { runtime, db, originalFrom, originalRunId } = params
+  const unchanged = { to: originalFrom, runId: originalRunId }
+  if (originalFrom.startsWith('run:')) {
+    return unchanged
+  }
+  if (originalFrom.startsWith('dispatch:')) {
+    const runBound = resolveRunBoundDispatchRecipient(db, originalFrom.slice('dispatch:'.length))
+    return runBound ? { to: runBound.to, runId: runBound.runId } : unchanged
+  }
+  const recipient = resolveBareOrchestrationRecipient({
+    runtime,
+    db,
+    handle: originalFrom,
+    senderRunId: originalRunId
+  })
+  return recipient.ok ? { to: recipient.to, runId: recipient.runId ?? originalRunId } : unchanged
+}
+
 export type SendRecipientWarning = {
   code:
     | 'legacy_terminal_recipient'
+    | 'recipient_run_bound_redirect'
     | 'recipient_unreachable'
     | 'recipient_ambiguous'
     | 'recipient_run_mismatch'

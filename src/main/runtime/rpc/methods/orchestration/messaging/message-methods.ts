@@ -11,6 +11,7 @@ import {
 } from '../../../orchestration-mutation-executor'
 import { exposeMessage } from './mailbox-message-receipt'
 import { recordReceiptBeforeNudge, replayMutationNudge } from './mutation-replay-nudge'
+import { resolveReplyRecipient } from './recipient-routing'
 import {
   ReplyParams,
   InboxParams,
@@ -112,13 +113,19 @@ export const ORCHESTRATION_MESSAGE_METHODS = [
 
       db.markAsRead([original.id])
 
+      const recipient = resolveReplyRecipient({
+        runtime,
+        db,
+        originalFrom: original.from_handle,
+        originalRunId: original.run_id
+      })
       const reply = db.insertMessage({
         from: params.from ?? original.to_handle,
-        to: original.from_handle,
+        to: recipient.to,
         subject: `Re: ${original.subject}`,
         body: params.body,
         threadId: original.thread_id ?? original.id,
-        runId: original.run_id
+        runId: recipient.runId
       })
 
       const receipt = { message: exposeMessage(reply) }
