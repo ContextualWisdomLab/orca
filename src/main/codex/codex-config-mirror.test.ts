@@ -73,6 +73,30 @@ afterEach(() => {
 })
 
 describe('syncSystemConfigIntoManagedCodexHome', () => {
+  it('binds mirrored MCP header helpers to each account home', () => {
+    const sourceHome = getSystemCodexHomePath()
+    const canonical = [
+      '[mcp_servers.time]',
+      `http_headers_helper = "/usr/bin/env CODEX_HOME=${sourceHome} python headers.py"`,
+      '',
+      '[mcp_servers.other]',
+      'http_headers_helper = "python unrelated.py"',
+      ''
+    ].join('\n')
+    writeFileSync(getSystemConfigPath(), canonical, 'utf-8')
+    const firstHome = join(userDataDir, 'account homes', 'first', 'home')
+    const secondHome = join(userDataDir, 'account homes', 'second', 'home')
+    for (const runtimeHomePath of [firstHome, secondHome]) {
+      mkdirSync(runtimeHomePath, { recursive: true })
+      syncSystemConfigIntoManagedCodexHome({ runtimeHomePath, systemHomePath: sourceHome })
+      const mirrored = readFileSync(join(runtimeHomePath, 'config.toml'), 'utf-8')
+      expect(mirrored).toContain(`CODEX_HOME='${runtimeHomePath}'`)
+      expect(mirrored).toContain('http_headers_helper = "python unrelated.py"')
+      expect(mirrored).not.toContain(`CODEX_HOME=${sourceHome}`)
+    }
+    expect(readFileSync(getSystemConfigPath(), 'utf-8')).toBe(canonical)
+  })
+
   it('seeds a missing runtime config without copying system hook trust', () => {
     writeFileSync(
       getSystemConfigPath(),
