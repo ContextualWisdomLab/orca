@@ -6,6 +6,8 @@ import { checkRunMailbox } from './check-run'
 import { checkWorkerMailbox } from './check-worker'
 import { checkDirectMailbox } from './check-direct'
 import { orchestrationSkillRecoveryData } from '../../../../../../shared/orchestration-rpc-contract'
+import { hasRunBindingKey } from '../../../../orchestration/orchestration-caller-identity'
+import { orchestrationCallerIdentity } from '../runs/run-scope'
 import {
   callerHoldsDispatchPane,
   dispatchFenced,
@@ -20,6 +22,7 @@ export const ORCHESTRATION_CHECK_METHODS = [
       params,
       {
         orchestrationCompatibilityEvidence,
+        orchestrationCaller,
         runtime,
         signal,
         legacyCoordinatorRunId,
@@ -31,15 +34,21 @@ export const ORCHESTRATION_CHECK_METHODS = [
       const handle = params.terminal ?? 'unknown'
       const typeFilter = parseMessageTypes(params.types)
 
-      // Why: a live runtime handle is authoritative; pane metadata is only the restart fallback.
-      const paneKey = runtime.getTerminalPaneKey(handle) ?? params.terminalPaneKey
-      const boundRun = paneKey ? db.getCurrentRunForPane(paneKey) : undefined
+      const caller = orchestrationCallerIdentity(runtime, {
+        handle,
+        session: orchestrationCaller,
+        // Why: a live runtime handle is authoritative; pane metadata is only the restart fallback.
+        paneKey: runtime.getTerminalPaneKey(handle) ?? params.terminalPaneKey
+      })
+      const paneKey = caller.paneKey ?? undefined
+      const boundRun = hasRunBindingKey(caller) ? db.getCurrentRunForCoordinator(caller) : undefined
       const runMailboxArgs = {
         params,
         runtime,
         db,
         handle,
         paneKey,
+        callerSession: orchestrationCaller,
         typeFilter,
         signal,
         legacyCoordinatorRunId,
@@ -131,7 +140,7 @@ export const ORCHESTRATION_CHECK_METHODS = [
       }
       // Why: a consuming check on a handle with no live pane and no Dispatch can never see
       // Run mail, so an empty inbox would read as "nothing yet" instead of a stale caller.
-      if (!paneKey && consumingCheck) {
+      if (!hasRunBindingKey(caller) && consumingCheck) {
         throw new OrchestrationError(
           'stable_pane_required',
           `Terminal ${handle} has no live pane bound to a Run, so this inbox can never receive Run mail. Rebind this terminal with orchestration run-use, or read the Run mailbox with --run <run_id>.`,

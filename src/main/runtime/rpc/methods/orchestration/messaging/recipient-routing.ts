@@ -2,6 +2,9 @@ import type { LegacyAdoptedMailboxOwner, OrchestrationDb } from '../../../../orc
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
 import type { DispatchContextRow, DispatchStatus } from '../../../../orchestration/types'
 import type { OrcaRuntimeService } from '../../../../orca-runtime'
+import { readStructuredAgentSessionRecord } from '../../../../structured-worker-authority'
+import { structuredWorkerHostScope } from '../../../../structured-worker-identity'
+import { resolveOrchestrationParty } from '../../../../orchestration/orchestration-party'
 
 const ACTIVE_DISPATCH_STATUSES: readonly DispatchStatus[] = ['pending', 'dispatched']
 
@@ -35,14 +38,20 @@ export function resolveRunBoundDispatchRecipient(
   dispatchId: string
 ): { to: string; runId: string; warning: SendRecipientWarning } | undefined {
   const dispatch = db.getDispatchContextById(dispatchId)
-  if (
-    !dispatch ||
-    !ACTIVE_DISPATCH_STATUSES.includes(dispatch.status) ||
-    !dispatch.assignee_pane_key
-  ) {
+  if (!dispatch || !ACTIVE_DISPATCH_STATUSES.includes(dispatch.status)) {
     return undefined
   }
-  const boundRun = db.getCurrentRunForPane(dispatch.assignee_pane_key)
+  // Why: same precedence as bare-handle routing — a session-backed binding outranks the pane.
+  const boundRun =
+    dispatch.assignee_orca_session_id !== null
+      ? db.getCurrentRunForCoordinator({
+          terminalHandle: dispatch.assignee_handle,
+          paneKey: dispatch.assignee_pane_key,
+          orcaSessionId: dispatch.assignee_orca_session_id
+        })
+      : dispatch.assignee_pane_key
+        ? db.getCurrentRunForPane(dispatch.assignee_pane_key)
+        : undefined
   if (!boundRun || boundRun.id === dispatch.run_id) {
     return undefined
   }
@@ -121,9 +130,20 @@ export function resolveBareOrchestrationRecipient(params: {
   explicitRunId?: string
   legacyAdoptedMailboxOwner?: LegacyAdoptedMailboxOwner | null
 }): BareRecipientResolution {
-  const { runtime, db, handle } = params
-  const paneKey = runtime.getLiveTerminalPaneKey(handle) ?? undefined
-  const boundRun = paneKey ? db.getCurrentRunForPane(paneKey) : undefined
+  const { runtime, db } = params
+  const party = resolveOrchestrationParty(params.handle, db)
+  const handle = party.address
+  const paneKey =
+    party.terminalHandle === null
+      ? undefined
+      : (runtime.getLiveTerminalPaneKey(party.terminalHandle) ?? undefined)
+  // Why: a session-backed party's Run binding is durable, so it outranks whether its pane is live.
+  const boundRun =
+    party.orcaSessionId !== null
+      ? db.getCurrentRunForCoordinator(party)
+      : paneKey
+        ? db.getCurrentRunForPane(paneKey)
+        : undefined
   if (boundRun) {
     const mismatch = runMismatch(handle, boundRun.id, params.explicitRunId)
     return mismatch ?? { ok: true, to: `run:${boundRun.id}`, runId: boundRun.id }
@@ -168,7 +188,19 @@ export function resolveBareOrchestrationRecipient(params: {
     }
   }
 
-  const message = `Terminal ${handle} has no live pane or durable Run/Dispatch mailbox.`
+  const chatSessionId = party.terminalHandle === null ? party.orcaSessionId : null
+  if (chatSessionId !== null) {
+    const record = readStructuredAgentSessionRecord(chatSessionId)
+    // Unlike a terminal handle, a session address outlives its process, so its direct mail is durable.
+    if (record && structuredWorkerHostScope(record.location)) {
+      return { ok: true, to: handle, runId: params.senderRunId }
+    }
+  }
+
+  const message =
+    chatSessionId !== null
+      ? `Agent session ${chatSessionId} does not run on this host and has no durable Run/Dispatch mailbox.`
+      : `Terminal ${handle} has no live pane or durable Run/Dispatch mailbox.`
   return {
     ok: false,
     code: 'terminal_not_found',
