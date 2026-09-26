@@ -14,6 +14,16 @@ import {
   isSupersededDispatch
 } from './dispatch-mailbox-fence'
 
+function returnedMessages(result: unknown): boolean {
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    'count' in result &&
+    typeof result.count === 'number' &&
+    result.count > 0
+  )
+}
+
 export const ORCHESTRATION_CHECK_METHODS = [
   defineMethod({
     name: 'orchestration.check',
@@ -68,10 +78,12 @@ export const ORCHESTRATION_CHECK_METHODS = [
       ) {
         const mailbox = `dispatch:${residualDispatch.id}`
         const ackOwner = params.ack ? db.getDeliveryRaw(params.ack)?.mailbox_handle : undefined
+        // `--types` is the wake condition for --wait, so only matching Dispatch mail may preempt it.
         const pending =
-          db.hasOutstandingMailboxDelivery(mailbox) || db.getUnreadMessages(mailbox).length > 0
+          db.hasOutstandingMailboxDelivery(mailbox) ||
+          db.getUnreadMessages(mailbox, params.wait ? typeFilter : undefined).length > 0
         if (ackOwner === mailbox || (!params.ack && pending)) {
-          const dispatchResult = (await checkWorkerMailbox({
+          const dispatchResult = await checkWorkerMailbox({
             params: { ...params, wait: false },
             runtime,
             db,
@@ -81,16 +93,18 @@ export const ORCHESTRATION_CHECK_METHODS = [
             signal,
             activeDispatch: residualDispatch,
             remoteAttachment: undefined
-          })) as { count?: number }
-          if ((dispatchResult.count ?? 0) > 0) {
+          })
+          if (returnedMessages(dispatchResult)) {
             return dispatchResult
           }
           // The Dispatch batch was acknowledged and nothing is left there: continue with the Run.
-          const runResult = (await checkRunMailbox({
+          const runResult = await checkRunMailbox({
             ...runMailboxArgs,
             params: { ...params, ack: undefined }
-          })) as object
-          return { ...runResult, acknowledged: params.ack ?? null }
+          })
+          return typeof runResult === 'object' && runResult !== null
+            ? { ...runResult, acknowledged: params.ack ?? null }
+            : runResult
         }
       }
       if (params.run || boundRun) {

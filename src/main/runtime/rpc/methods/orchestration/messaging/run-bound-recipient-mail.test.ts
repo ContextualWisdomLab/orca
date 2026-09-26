@@ -48,32 +48,37 @@ describe('mail for a lead whose pane coordinates its own Run', () => {
     return h.call(name, params, ctx)
   }
 
-  async function leadInbox(params: Record<string, unknown> = {}) {
-    return (await call('orchestration.check', { terminal: 'term_lead', ...params })) as {
-      runId?: string
-      deliveryId?: string | null
-      messages: { subject: string }[]
-      timedOut?: boolean
+  async function leadInbox(params: Record<string, unknown> = {}): Promise<unknown> {
+    return call('orchestration.check', { terminal: 'term_lead', ...params })
+  }
+
+  function deliveryIdOf(result: unknown): string {
+    if (
+      typeof result === 'object' &&
+      result !== null &&
+      'deliveryId' in result &&
+      typeof result.deliveryId === 'string'
+    ) {
+      return result.deliveryId
     }
+    throw new Error('check returned no delivery')
   }
 
   it('routes dispatch:<id> mail to the Run the assignee pane now coordinates', async () => {
     setup()
     const leadRun = bindLeadRun()
 
-    const result = (await call('orchestration.send', {
+    const result = await call('orchestration.send', {
       from: 'term_coord',
       to: `dispatch:${dispatch.id}`,
       subject: 'Follow-up for the lead'
-    })) as { message: { to_handle: string; run_id: string }; warnings?: { code: string }[] }
+    })
 
-    expect(result.message.to_handle).toBe(`run:${leadRun.id}`)
-    expect(result.message.run_id).toBe(leadRun.id)
-    expect(result.warnings?.map((warning) => warning.code)).toContain(
-      'recipient_run_bound_redirect'
-    )
-    const inbox = await leadInbox()
-    expect(inbox.messages.map((message) => message.subject)).toEqual(['Follow-up for the lead'])
+    expect(result).toMatchObject({
+      message: { to_handle: `run:${leadRun.id}`, run_id: leadRun.id },
+      warnings: [{ code: 'recipient_run_bound_redirect' }]
+    })
+    expect(await leadInbox()).toMatchObject({ messages: [{ subject: 'Follow-up for the lead' }] })
   })
 
   it('still reads dispatch mail that arrived before the pane bound its own Run', async () => {
@@ -93,13 +98,36 @@ describe('mail for a lead whose pane coordinates its own Run', () => {
     })
 
     const first = await leadInbox()
-    expect(first.messages.map((message) => message.subject)).toEqual([
-      'Sent before the lead bound a Run'
-    ])
-    expect(first.deliveryId).toBeTruthy()
+    expect(first).toMatchObject({ messages: [{ subject: 'Sent before the lead bound a Run' }] })
 
-    const second = await leadInbox({ ack: first.deliveryId })
-    expect(second.messages.map((message) => message.subject)).toEqual(['Sub-worker report'])
+    const second = await leadInbox({ ack: deliveryIdOf(first) })
+    expect(second).toMatchObject({ messages: [{ subject: 'Sub-worker report' }] })
+  })
+
+  it('keeps the --types wake condition when older Dispatch mail does not match it', async () => {
+    setup()
+    db.insertMessage({
+      from: 'term_coord',
+      to: `dispatch:${dispatch.id}`,
+      subject: 'Older status note',
+      type: 'status',
+      runId: rootRun.id
+    })
+    const leadRun = bindLeadRun()
+    db.insertMessage({
+      from: 'term_worker',
+      to: `run:${leadRun.id}`,
+      subject: 'Sub-worker finished',
+      type: 'worker_done',
+      runId: leadRun.id
+    })
+
+    const woke = await leadInbox({ wait: true, types: 'worker_done', timeoutMs: 500 })
+
+    expect(woke).toMatchObject({
+      runId: leadRun.id,
+      messages: [{ subject: 'Sub-worker finished' }]
+    })
   })
 
   it('delivers a reply to a Run-bound sender and wakes its waiting check', async () => {
@@ -113,30 +141,32 @@ describe('mail for a lead whose pane coordinates its own Run', () => {
     })
 
     const waiting = leadInbox({ wait: true, timeoutMs: 2_000 })
-    const reply = (await call('orchestration.reply', {
+    const reply = await call('orchestration.reply', {
       id: report.id,
       from: 'term_coord',
       body: 'Decision'
-    })) as { message: { to_handle: string; run_id: string } }
+    })
 
-    expect(reply.message.to_handle).toBe(`run:${leadRun.id}`)
-    expect(reply.message.run_id).toBe(leadRun.id)
-    const woke = await waiting
-    expect(woke.timedOut).toBe(false)
-    expect(woke.messages.map((message) => message.subject)).toEqual(['Re: Lead report'])
+    expect(reply).toMatchObject({
+      message: { to_handle: `run:${leadRun.id}`, run_id: leadRun.id }
+    })
+    expect(await waiting).toMatchObject({
+      timedOut: false,
+      messages: [{ subject: 'Re: Lead report' }]
+    })
   })
 
   it('keeps dispatch:<id> mail on the Dispatch mailbox while the assignee has no Run', async () => {
     setup()
 
-    const result = (await call('orchestration.send', {
+    const result = await call('orchestration.send', {
       from: 'term_coord',
       to: `dispatch:${dispatch.id}`,
       subject: 'Plain worker follow-up'
-    })) as { message: { to_handle: string }; warnings?: unknown[] }
+    })
 
-    expect(result.message.to_handle).toBe(`dispatch:${dispatch.id}`)
-    expect(result.warnings).toBeUndefined()
+    expect(result).toMatchObject({ message: { to_handle: `dispatch:${dispatch.id}` } })
+    expect(result).not.toHaveProperty('warnings')
   })
 
   it('keeps a reply on the raw handle when the sender has no Run or live pane', async () => {
@@ -148,13 +178,12 @@ describe('mail for a lead whose pane coordinates its own Run', () => {
       runId: rootRun.id
     })
 
-    const reply = (await call('orchestration.reply', {
+    const reply = await call('orchestration.reply', {
       id: note.id,
       from: 'term_coord',
       body: 'Ack'
-    })) as { message: { to_handle: string; run_id: string } }
+    })
 
-    expect(reply.message.to_handle).toBe('term_offline')
-    expect(reply.message.run_id).toBe(rootRun.id)
+    expect(reply).toMatchObject({ message: { to_handle: 'term_offline', run_id: rootRun.id } })
   })
 })
