@@ -5,11 +5,8 @@ import {
   type AgentStatus
 } from '../../shared/agent-detection'
 import type { RuntimeTerminalWaitBlockedReason } from '../../shared/runtime-types'
-import {
-  isTerminalWaitWhitespace,
-  startOfLastLines,
-  startOfLastNonBlankLines
-} from './terminal-wait-tail-window'
+import { findAntigravityReadyPromptIndex } from './antigravity-terminal-readiness'
+import { startOfLastLines, startOfLastNonBlankLines } from './terminal-wait-tail-window'
 
 const EXPLICIT_IDLE_TITLE_RE = /(^|\s)(ready|idle|done)(\s|$|[.!?])/i
 const CLAUDE_IDLE_PREFIX = '\u2733'
@@ -57,6 +54,18 @@ export function isKnownReadyPromptPreview(preview: string): boolean {
   return true
 }
 
+// Why separate from isKnownReadyPromptPreview: that one settles tier 1 immediately, while
+// a Muse ready screen only proves the TUI is up — the ranking holds it to quiescence.
+export function isMuseReadyPromptPreview(preview: string): boolean {
+  const normalized = preview.toLowerCase()
+  const readyIndex = findMuseReadyPromptIndex(normalized)
+  if (readyIndex === null) {
+    return false
+  }
+  const blockedSignal = findTerminalWaitBlockedSignal(normalized)
+  return blockedSignal === null || blockedSignal.index <= readyIndex
+}
+
 export function detectTerminalWaitBlockedReason(
   preview: string
 ): RuntimeTerminalWaitBlockedReason | null {
@@ -83,7 +92,8 @@ function findDismissedStartupModalIndex(normalized: string): number | null {
   const indexes = [
     findCodexReadyPromptIndex(normalized),
     findAntigravityReadyPromptIndex(normalized),
-    findCursorActivePromptIndex(normalized)
+    findCursorActivePromptIndex(normalized),
+    findMuseReadyPromptIndex(normalized)
   ].filter((index): index is number => index !== null)
   return indexes.length > 0 ? Math.max(...indexes) : null
 }
@@ -117,6 +127,19 @@ function findCursorReadyPromptIndex(normalized: string): number | null {
   return CURSOR_BUSY_SPINNER_RE.test(normalized.slice(activeIndex)) ? null : activeIndex
 }
 
+// Why: Muse titles its OSC with the bare cwd and never updates it, so only the body can
+// prove the TUI is up. The voice-input composer is present even without loaded skills.
+function findMuseReadyPromptIndex(normalized: string): number | null {
+  const headerIndex = normalized.lastIndexOf('muse code')
+  if (headerIndex === -1) {
+    return null
+  }
+  const segment = normalized.slice(headerIndex)
+  return segment.includes('voice') && segment.includes('input') && segment.includes('❯')
+    ? headerIndex
+    : null
+}
+
 function findCodexReadyPromptIndex(normalized: string): number | null {
   const headerIndex = normalized.lastIndexOf('openai codex')
   if (headerIndex === -1) {
@@ -125,64 +148,6 @@ function findCodexReadyPromptIndex(normalized: string): number | null {
   const readySegment = normalized.slice(headerIndex)
   // Why: Codex prints permissions only in YOLO mode; the stable ready header is OpenAI Codex + model + directory.
   return readySegment.includes('model:') && readySegment.includes('directory:') ? headerIndex : null
-}
-
-function findAntigravityReadyPromptIndex(normalized: string): number | null {
-  if (!normalized.includes('antigravity cli')) {
-    return null
-  }
-  const caret = lastNonBlankLineBefore(normalized, normalized.length)
-  if (
-    caret === null ||
-    caret.end - caret.start !== 1 ||
-    normalized.charCodeAt(caret.start) !== 62
-  ) {
-    return null
-  }
-  const rule = lastNonBlankLineBefore(normalized, caret.start)
-  return rule !== null && isAntigravityComposerRule(normalized, rule.start, rule.end)
-    ? caret.start
-    : null
-}
-
-const COMPOSER_RULE_CHAR_CODE = 0x2500
-const MIN_COMPOSER_RULE_GLYPHS = 8
-
-function isAntigravityComposerRule(value: string, start: number, end: number): boolean {
-  if (end - start < MIN_COMPOSER_RULE_GLYPHS) {
-    return false
-  }
-  for (let index = start; index < end; index += 1) {
-    if (value.charCodeAt(index) !== COMPOSER_RULE_CHAR_CODE) {
-      return false
-    }
-  }
-  return true
-}
-
-function lastNonBlankLineBefore(
-  value: string,
-  limit: number
-): { start: number; end: number } | null {
-  let lineEnd = limit
-  for (;;) {
-    const lineStart = value.lastIndexOf('\n', lineEnd - 1) + 1
-    let trimmedStart = lineStart
-    let trimmedEnd = lineEnd
-    while (trimmedStart < trimmedEnd && isTerminalWaitWhitespace(value, trimmedStart)) {
-      trimmedStart += 1
-    }
-    while (trimmedEnd > trimmedStart && isTerminalWaitWhitespace(value, trimmedEnd - 1)) {
-      trimmedEnd -= 1
-    }
-    if (trimmedStart < trimmedEnd) {
-      return { start: trimmedStart, end: trimmedEnd }
-    }
-    if (lineStart === 0) {
-      return null
-    }
-    lineEnd = lineStart - 1
-  }
 }
 
 export const TERMINAL_WAIT_BLOCKED_SENTINEL_RE =
