@@ -11,6 +11,7 @@ import {
   parseCspDirectives,
   projectDir,
   readBridgeFaultGrant,
+  readBridgePagePainted,
   readBridgeProtocolVersion,
   readShellCsp
 } from './mobile-web-app-render-harness.mjs'
@@ -58,10 +59,18 @@ let faultGrant = null
 const poisonedChunks = new Set()
 const POISON_MESSAGE = 'render check poisoned this route chunk'
 
+/**
+ * Chunk paths the server holds until the check lets them go, so "the chunk has not arrived" is a
+ * state the check controls rather than a window it has to win a race against.
+ */
+const heldChunks = new Map()
+let paintName = null
+
 beforeAll(async () => {
   cspHeader = await readShellCsp()
   bridgeVersion = await readBridgeProtocolVersion()
   faultGrant = await readBridgeFaultGrant()
+  paintName = await readBridgePagePainted()
   if (!bundles) {
     return
   }
@@ -78,7 +87,20 @@ beforeAll(async () => {
     transformChunk: (path, real) =>
       poisonedChunks.has(path)
         ? `throw new Error(${JSON.stringify(POISON_MESSAGE)});\n${real.toString('utf8')}`
-        : real
+        : real,
+    handleRequest: (request, response, path) => {
+      const held = heldChunks.get(path)
+      if (!held) {
+        return false
+      }
+      held
+        .then(() => readFile(join(outDir, path.slice(1))))
+        .then((real) => {
+          response.writeHead(200, { 'content-type': 'text/javascript' })
+          response.end(real)
+        })
+      return true
+    }
   })
   server = served.server
   origin = served.origin
@@ -113,7 +135,8 @@ async function openPage({
   shellHost = SHELL_HOST,
   shellStorage = {},
   shellGrants,
-  shellPageRoutes = null
+  shellPageRoutes = null,
+  shellAccepts = null
 } = {}) {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
   if (shellRoute !== undefined) {
@@ -128,7 +151,8 @@ async function openPage({
       storage: shellStorage,
       faultGrant,
       grants: shellGrants ?? [faultGrant],
-      pageRoutes: shellPageRoutes
+      pageRoutes: shellPageRoutes,
+      accepts: shellAccepts
     })
   }
   const errors = []
@@ -239,6 +263,14 @@ async function render(route, awaitText, { shellRoute = { pathname: route }, ...s
   }
 }
 
+/** How many frames the double has heard under the paint name, which is what uncovers the view. */
+const paintReports = (page, name) =>
+  page.evaluate(
+    (paint) =>
+      (globalThis.__orcaRenderCheckNotifies ?? []).filter((frame) => frame.name === paint).length,
+    name
+  )
+
 /** The entry's state and what it painted, for a page that is never going to mount a route tree. */
 async function renderWithoutTree({ shellRoute } = {}) {
   const { page, errors } = await openPage({ shellRoute })
@@ -292,10 +324,15 @@ describe('the shell policy this page is tested under', () => {
     expect(cspHeader).not.toContain("script-src 'self' 'unsafe-inline'")
   })
 
-  it('admits data: for images and for nothing else', () => {
+  it('admits data: and https: for images and for nothing else', () => {
     expect(cspHeader.split('; ').filter((entry) => entry.includes('data:'))).toEqual([
-      "img-src 'self' data:"
+      "img-src 'self' data: https:"
     ])
+    expect(cspHeader.split('; ').filter((entry) => entry.includes('https:'))).toEqual([
+      "img-src 'self' data: https:"
+    ])
+    // `http:` is not a substring of `https:`, so this still refuses a cleartext source.
+    expect(cspHeader).not.toContain('http:')
   })
 })
 
@@ -417,12 +454,59 @@ describeRender('the Route A page in a real browser', () => {
     expect(text).not.toContain(UNMATCHED)
   }, 60_000)
 
-  it('renders the unmatched route rather than crashing on a path with no module', async () => {
-    const { errors, cspErrors, text } = await render(`${HOST_ROUTE}/not-a-route`, UNMATCHED)
+  // Both files routes reach OrcaMobileWebShellView from their native file, whose module calls
+  // requireNativeViewManager at import and throws in a browser. The manifest defers every route
+  // behind `import()`, so that throw is invisible until the page opens this route — which is why
+  // it needs a `.web.tsx` sibling and why proving it costs a render of the route itself.
+  it('mounts the file explorer, which its native route module cannot do', async () => {
+    const worktreeRoute = `${HOST_ROUTE}/files/worktree-a`
+    const { errors, cspErrors, text } = await render(worktreeRoute, 'Files', {
+      shellRoute: { pathname: worktreeRoute, params: { name: 'Example Worktree' } }
+    })
     expect(cspErrors).toEqual([])
     expect(errors).toEqual([])
-    // Asserted positively so the two negatives above are known to discriminate.
-    expect(text).toContain(UNMATCHED)
+    expect(text).toContain('Files')
+    expect(text).toContain('Example Worktree')
+    expect(text).not.toContain(UNMATCHED)
+  }, 60_000)
+
+  it('mounts the file preview, reading the file path out of a param and not a segment', async () => {
+    const previewRoute = `${HOST_ROUTE}/files/preview/worktree-a`
+    const { errors, cspErrors, text, url } = await render(previewRoute, 'readme.md', {
+      shellRoute: {
+        pathname: previewRoute,
+        params: { relativePath: 'docs/my notes/readme.md', source: 'worktree' }
+      }
+    })
+    expect(cspErrors).toEqual([])
+    // Empty, and that is the point: React Native Web's BackHandler logs "not supported on web" for
+    // anyone who registers one, so this line is what proves the screen no longer does. Android back
+    // inside the page therefore pops the native stack without the unsaved-draft prompt, which lives
+    // on the page's own Back control.
+    expect(errors).toEqual([])
+    // The title is the last segment of the path param, so this says the param reached the screen
+    // with its last segment intact; `readme.md` is what a truncated or re-split path would also
+    // end in. The url assertion below pins the outbound leg — what the page encoded into its own
+    // history, `/` and space included — and no more: a screen that mis-decoded the middle of the
+    // path would satisfy both lines. The decode leg is proved where it can be read directly, in
+    // `mobile/src/files/mobile-file-path-route-encoding.test.ts`, which takes each hazard shape
+    // back out of the href, and `mobile/src/files/mobile-file-preview-route.test.ts`, which drives
+    // the normalizer the screen reads its params through.
+    expect(text).toContain('readme.md')
+    expect(url).toBe(`${previewRoute}?relativePath=docs%2Fmy+notes%2Freadme.md&source=worktree`)
+    expect(text).not.toContain(UNMATCHED)
+  }, 60_000)
+
+  it('refuses a host-scoped path with no module rather than crashing', async () => {
+    // The catch-all owns every `/h/<id>/...` pathname the tree has no file for, so this no longer
+    // reaches expo-router's Unmatched: the refusal is what the page paints instead. Both halves are
+    // asserted, so the negative is known to discriminate rather than to pass on a blank screen.
+    const refusal = 'This workspace screen is not available on this host.'
+    const { errors, cspErrors, text } = await render(`${HOST_ROUTE}/not-a-route`, refusal)
+    expect(cspErrors).toEqual([])
+    expect(errors).toEqual([])
+    expect(text).toContain(refusal)
+    expect(text).not.toContain(UNMATCHED)
   }, 60_000)
 
   it('carries the params the shell named into the url the screen reads', async () => {
@@ -488,6 +572,100 @@ describeRender('the Route A page in a real browser', () => {
       poisonedChunks.delete(`/assets/${chunk}`)
     }
   }, 60_000)
+
+  it('reports its frame from the route screen, not from the router shell above it', async () => {
+    // The gap the shell's cover exists for. The entry's wrapper commits against the suspense
+    // fallback of a chunk still in flight, so a report hung there uncovers an empty body.
+    const chunk = routeChunks['./h/[hostId]/index.tsx']
+    expect(chunk, Object.keys(routeChunks).join(' ')).toBeTruthy()
+    const path = `/assets/${chunk}`
+    let arrive = () => {}
+    heldChunks.set(
+      path,
+      new Promise((resolve) => {
+        arrive = resolve
+      })
+    )
+    try {
+      // The one case that advertises the report, because it is the only one asserting on it.
+      const opened = await openPage({
+        shellRoute: { pathname: HOST_ROUTE },
+        shellAccepts: [paintName]
+      })
+      await opened.page.goto(`${origin}/`, { waitUntil: 'load' })
+      await opened.page.waitForFunction(
+        () => document.documentElement.dataset.orcaWebEntry === 'mounted',
+        { timeout: 30_000, polling: 250 }
+      )
+      // Mounted, and nothing drawn: the body is the fallback's, which is what the old seam
+      // reported on.
+      expect(await opened.page.evaluate(() => document.body.innerText)).not.toContain(
+        SHELL_HOST.name
+      )
+      await opened.page.waitForTimeout(1_000)
+      expect(await paintReports(opened.page, paintName)).toBe(0)
+
+      arrive()
+      await waitForRoute(opened, HOST_ROUTE, SHELL_HOST.name)
+      await opened.page.waitForFunction(
+        (name) =>
+          (globalThis.__orcaRenderCheckNotifies ?? []).filter((frame) => frame.name === name)
+            .length > 0,
+        paintName,
+        { timeout: 30_000, polling: 250 }
+      )
+      expect(opened.errors).toEqual([])
+      await opened.page.close()
+    } finally {
+      arrive()
+      heldChunks.delete(path)
+    }
+  }, 120_000)
+
+  it('says nothing for a redirect screen whose target is still behind its chunk', async () => {
+    // The `pr` route renders a `Redirect` into the source-control hub and nothing else. It commits,
+    // sends the document on, and stays mounted behind the target's fallback while that chunk loads.
+    const target = routeChunks['./h/[hostId]/source-control/[worktreeId].tsx']
+    expect(target, Object.keys(routeChunks).join(' ')).toBeTruthy()
+    const path = `/assets/${target}`
+    let arrive = () => {}
+    heldChunks.set(
+      path,
+      new Promise((resolve) => {
+        arrive = resolve
+      })
+    )
+    try {
+      const route = `${HOST_ROUTE}/pr/render-check-tree`
+      const opened = await openPage({
+        shellRoute: { pathname: route },
+        shellAccepts: [paintName],
+        shellPageRoutes: [HOST_ROUTE_PATTERN, '/h/[hostId]/pr/[worktreeId]']
+      })
+      await opened.page.goto(`${origin}/`, { waitUntil: 'load' })
+      await opened.page.waitForFunction(
+        () => location.pathname.includes('/source-control/'),
+        undefined,
+        { timeout: 30_000, polling: 250 }
+      )
+      // The router has moved on and the hub is still arriving, so the document is showing nothing.
+      await opened.page.waitForTimeout(1_000)
+      expect(await paintReports(opened.page, paintName)).toBe(0)
+
+      arrive()
+      await opened.page.waitForFunction(
+        (name) =>
+          (globalThis.__orcaRenderCheckNotifies ?? []).filter((frame) => frame.name === name)
+            .length > 0,
+        paintName,
+        { timeout: 30_000, polling: 250 }
+      )
+      await opened.page.close()
+    } finally {
+      arrive()
+      heldChunks.delete(path)
+    }
+  }, 120_000)
 
   it('refuses a target the shell will not take, rather than opening it in the page', async () => {
     // The double grants only `fault`, so `notifyNavigate` answers false -- the shell-disposed and

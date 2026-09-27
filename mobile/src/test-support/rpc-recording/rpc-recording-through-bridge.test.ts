@@ -18,9 +18,13 @@ import {
   type BridgedParityEvidence
 } from '../bridged-parity/divergence-classes'
 import { C5_PAGE_CLOSURE } from '../bridged-parity/c5-page-closure'
+import { C6_BROWSER_CLOSURE_FAMILIES } from '../bridged-parity/c6-browser-closure-families'
+import { C2_PAGE_CLOSURE } from '../bridged-parity/c2-page-closure'
 import { C1_PAGE_CLOSURE } from '../bridged-parity/c1-page-closure'
+import { C3_PAGE_CLOSURE } from '../bridged-parity/c3-page-closure'
 import {
   pageClosureDrift,
+  pageClosureRunTotals,
   pageClosureTotals,
   readPageClosure,
   type BridgedParityVerdict,
@@ -365,6 +369,12 @@ describe.skipIf(process.env[BRIDGED_PARITY_FLAG] === BRIDGED_PARITY_OFF)(
       // Each by id, because the counts above cannot see this domain: a closure golden that stopped
       // replaying identically is paid for by any of the other 684 that started.
       expect({ closure: pageClosureDrift(C1_PAGE_CLOSURE, observed) }).toEqual({ closure: [] })
+      // And the run's own totals over this closure, as the two blocks below do. `c1-page-closure.ts`
+      // pins no class counts of its own, so without this a verdict edited inside that file is green
+      // everywhere C1 is read alone.
+      expect(pageClosureRunTotals(C1_PAGE_CLOSURE, observed)).toEqual(
+        pageClosureTotals(C1_PAGE_CLOSURE)
+      )
     })
 
     it('gives every golden the C5 page closure records the verdict it is pinned to', () => {
@@ -376,11 +386,48 @@ describe.skipIf(process.env[BRIDGED_PARITY_FLAG] === BRIDGED_PARITY_OFF)(
       // The run's own totals over this closure, against the pin's. A per-id walk agrees with a
       // table that is wrong the same way twice; the counts are what caught exactly that while the
       // file was being derived.
-      const ran: Record<string, number> = {}
-      for (const [, seen] of [...observed].filter(([, seen]) => seen.family in C5_PAGE_CLOSURE)) {
-        ran[seen.verdict] = (ran[seen.verdict] ?? 0) + 1
-      }
-      expect(ran).toEqual(pageClosureTotals(C5_PAGE_CLOSURE))
+      expect(pageClosureRunTotals(C5_PAGE_CLOSURE, observed)).toEqual(
+        pageClosureTotals(C5_PAGE_CLOSURE)
+      )
+    })
+
+    it('gives every golden the C2 page closure records the verdict it is pinned to', () => {
+      process.stdout.write(readPageClosure('C2', C2_PAGE_CLOSURE, observed))
+      // 70 families and 266 goldens, C1's 22 among them and inherited rather than re-derived, so
+      // this repeats their check too. Five of the families it adds have no byte-identical golden at
+      // all: there the pin holds the class, which is the whole of what it can hold.
+      expect({ closure: pageClosureDrift(C2_PAGE_CLOSURE, observed) }).toEqual({ closure: [] })
+      expect(pageClosureRunTotals(C2_PAGE_CLOSURE, observed)).toEqual(
+        pageClosureTotals(C2_PAGE_CLOSURE)
+      )
+    })
+
+    /**
+     * The browser pane's half, checked the same way and for the same reason the composed tables are.
+     *
+     * A half rather than a page closure because C6 registers no route — C7 composes this beside
+     * C1's — but a table nothing reads is not a pin, so the run is held to it here from the series
+     * that derived it rather than from the one that will inherit it.
+     */
+    it('gives every golden the C6 browser closure records the verdict it is pinned to', () => {
+      process.stdout.write(readPageClosure('C6', C6_BROWSER_CLOSURE_FAMILIES, observed))
+      expect({ closure: pageClosureDrift(C6_BROWSER_CLOSURE_FAMILIES, observed) }).toEqual({
+        closure: []
+      })
+      expect(pageClosureRunTotals(C6_BROWSER_CLOSURE_FAMILIES, observed)).toEqual(
+        pageClosureTotals(C6_BROWSER_CLOSURE_FAMILIES)
+      )
+    })
+
+    it('gives every golden the C3 page closure records the verdict it is pinned to', () => {
+      process.stdout.write(readPageClosure('C3', C3_PAGE_CLOSURE, observed))
+      // 28 families and 125 goldens, C1's 22 among them and inherited rather than re-derived, so
+      // this repeats their check too. One family it inherits has no byte-identical golden at all;
+      // all six it adds have at least one, so for those the pin holds bytes and not only a name.
+      expect({ closure: pageClosureDrift(C3_PAGE_CLOSURE, observed) }).toEqual({ closure: [] })
+      expect(pageClosureRunTotals(C3_PAGE_CLOSURE, observed)).toEqual(
+        pageClosureTotals(C3_PAGE_CLOSURE)
+      )
     })
   }
 )
