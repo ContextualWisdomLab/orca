@@ -1,4 +1,13 @@
-import { dirname, join } from 'node:path'
+import {
+  resolveCodexConfigMirrorSourceDirectory,
+  prepareSystemConfigForRuntimeMirror,
+  prepareSystemConfigForFreshRuntimeMirror
+} from './codex-config-mirror-preparation'
+export {
+  prepareSystemConfigForFreshRuntimeMirror,
+  resolveCodexConfigMirrorSourceDirectory
+} from './codex-config-mirror-preparation'
+import { join } from 'node:path'
 import { observeAgentStateFile } from './codex-path-observation'
 import {
   recoverInterruptedGuardedFileOperation,
@@ -6,9 +15,6 @@ import {
   writeFileAtomicallyIfUnchanged
 } from '../codex-accounts/fs-utils'
 import { getOrcaManagedCodexHomePath, getSystemCodexHomePath } from './codex-home-paths'
-import { rewriteRelativePathConfigValues } from './codex-config-path-reference-rewrite'
-import { normalizeDeprecatedCodexHookFeatureFlag } from './config-toml-deprecated-hook-flag'
-import { parseWslUncPath } from '../../shared/wsl-paths'
 import {
   promoteCodexRuntimeSettingsToSystem,
   snapshotCodexRuntimeSettingsBaseline,
@@ -140,9 +146,17 @@ export function syncSystemConfigIntoLegacySharedCodexHome(
     runtimeConfigBeforeMirror !== null
       ? mergeSystemCodexConfigIntoRuntime(
           runtimeConfigBeforeMirror,
-          prepareSystemConfigForRuntimeMirror(rawSystemConfig, sourceConfigDir)
+          prepareSystemConfigForRuntimeMirror(
+            rawSystemConfig,
+            sourceConfigDir,
+            homes.runtimeHomePath
+          )
         )
-      : prepareSystemConfigForFreshRuntimeMirror(rawSystemConfig, sourceConfigDir)
+      : prepareSystemConfigForFreshRuntimeMirror(
+          rawSystemConfig,
+          sourceConfigDir,
+          homes.runtimeHomePath
+        )
   if (runtimeConfigBeforeMirror === nextRuntimeConfig) {
     return
   }
@@ -190,12 +204,16 @@ function syncSystemConfigIntoManagedCodexHomeUnsafe(
   if (!runtimeConfigExists) {
     writeFileAtomically(
       runtimeConfigPath,
-      prepareSystemConfigForFreshRuntimeMirror(rawSystemConfig, sourceConfigDir)
+      prepareSystemConfigForFreshRuntimeMirror(rawSystemConfig, sourceConfigDir, runtimeHomePath)
     )
     return { status: 'mirrored', preservedConflictKeys: new Set() }
   }
 
-  const systemConfig = prepareSystemConfigForRuntimeMirror(rawSystemConfig, sourceConfigDir)
+  const systemConfig = prepareSystemConfigForRuntimeMirror(
+    rawSystemConfig,
+    sourceConfigDir,
+    runtimeHomePath
+  )
   // Why: reuse the bytes already observed above rather than re-reading. A second
   // read could succeed where the first failed and re-open the gap this closes.
   const runtimeConfig = runtimeConfigObservation.value
@@ -207,35 +225,6 @@ function syncSystemConfigIntoManagedCodexHomeUnsafe(
     writeFileAtomically(runtimeConfigPath, preserved.content)
   }
   return { status: 'mirrored', preservedConflictKeys: preserved.keys }
-}
-
-export function resolveCodexConfigMirrorSourceDirectory(
-  systemHomePath: string,
-  systemConfigDir?: string
-): string {
-  return (
-    systemConfigDir ??
-    parseWslUncPath(systemHomePath)?.linuxPath ??
-    dirname(join(systemHomePath, 'config.toml'))
-  )
-}
-
-function prepareSystemConfigForRuntimeMirror(config: string, systemConfigDir: string): string {
-  return rewriteRelativePathConfigValues(
-    normalizeDeprecatedCodexHookFeatureFlag(config),
-    systemConfigDir
-  )
-}
-
-// Why: trust blocks reference a hooks.json path, so system-home hook trust
-// entries are not valid in a fresh runtime CODEX_HOME until install remaps
-// them. Also seeds WSL runtime homes, where systemConfigDir must be the
-// Linux-side ~/.codex the config resolves against inside the distro.
-export function prepareSystemConfigForFreshRuntimeMirror(
-  config: string,
-  systemConfigDir: string
-): string {
-  return stripRuntimeOwnedTomlSections(prepareSystemConfigForRuntimeMirror(config, systemConfigDir))
 }
 
 function mergeSystemCodexConfigIntoRuntime(runtimeConfig: string, systemConfig: string): string {
