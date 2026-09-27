@@ -6,22 +6,24 @@
  * `app/h/[hostId]/agent-history/[worktreeId].web.tsx` and everything they import. The suite next
  * door proves the whole corpus replays byte-identically or in a named class, but it proves it as
  * counts over 787 goldens, and a count cannot tell this domain's regression from another domain's
- * improvement. These 134 are the ones whose divergence would be this domain's.
+ * improvement. These 125 are the ones whose divergence would be this domain's.
  *
- * C1's 22 families are a strict subset of these 27, and their verdicts are inherited from
+ * C1's 20 families are a strict subset of these 25, and their verdicts are inherited from
  * `c1-page-closure.ts` rather than derived again. That is not tidiness: deriving them from C2's
- * classification rule disagrees with the committed file on 10 pins, in three ways that are each a
- * true statement read too far. `tasks.smart-source-search` is a `params-undefined` family and the
- * rule's list of those is the five families C2 adds, not C1's one. `host-worktree-refresh` carries
+ * classification rule disagrees with the committed file on 13 pins, in three ways that are each a
+ * true statement read too far — all 7 in `tasks.smart-source-search`, all 5 in
+ * `host-worktree-refresh`, and `worktree-catalog-snapshot`. `tasks.smart-source-search` is a
+ * `params-undefined` family and the rule's list of those is the five families C2 adds, not C1's
+ * one. `host-worktree-refresh` carries
  * `write-ordinal` and `result-absent-stream-release` goldens, classes the rule does not model
  * because no family C2 adds carries one. And "a scenario scripting `{ ok: true }` with no result"
  * is a property of the scenario a golden derives from, not of its family, so reading it family-wide
  * moves `worktree-catalog-snapshot`. The rule decides the five families C5 adds and nothing else.
  *
- * 72 replay byte for byte and 62 do not, in four of the five classes the suite next door names —
- * 50 `result-absent-settlement`, 7 `params-undefined`, 3 `result-absent-stream-release`, 2
+ * 66 replay byte for byte and 59 do not, in four of the five classes the suite next door names —
+ * 47 `result-absent-settlement`, 7 `params-undefined`, 3 `result-absent-stream-release`, 2
  * `write-ordinal`. Every one is a recorder observation artifact whose wire bytes C0.5 and C0.8
- * proved identical. What the pin buys is that the 62 are named: a sixty-third arriving is a red
+ * proved identical. What the pin buys is that the 59 are named: a sixtieth arriving is a red
  * test here even though every count in `BRIDGED_PARITY_BASELINE` still holds.
  *
  * The five families C5 adds are all AI Vault: `aiVault.history`, `aiVault.history-screen`,
@@ -110,14 +112,6 @@ export const C5_PAGE_CLOSURE: PageClosurePins = {
     'matrix-host.worktree-actions-worktree.rm-1': 'result-absent-settlement',
     'matrix-host.worktree-actions-worktree.set-1': 'result-absent-settlement'
   },
-  'notifications.push-registration': {
-    'matrix-notifications.push-registration-notifications.registerpush-1':
-      'result-absent-settlement',
-    'matrix-notifications.push-registration-notifications.unregisterpush-1':
-      'result-absent-settlement',
-    'notifications-push-gateway-rejected': 'identical',
-    'notifications-push-registered': 'identical'
-  },
   'settings.repo-metadata': {
     'matrix-settings.repo-metadata-host.platform-1': 'result-absent-settlement',
     'matrix-settings.repo-metadata-repo.list-1': 'result-absent-settlement',
@@ -180,13 +174,6 @@ export const C5_PAGE_CLOSURE: PageClosurePins = {
     'tw-smart-search-all-providers': 'params-undefined',
     'tw-smart-search-gitlab-provider-error': 'identical',
     'tw-smart-search-linear-listed': 'params-undefined'
-  },
-  'transport.capability-probe': {
-    'matrix-transport.capability-probe-status.get-1': 'result-absent-settlement',
-    'transport-capability-probe-cutover-reasks-fast': 'identical',
-    'transport-capability-probe-non-string-capabilities-drop': 'identical',
-    'transport-capability-probe-publishes': 'identical',
-    'transport-capability-probe-refused-backs-off': 'identical'
   },
   'transport.host-status-gates': {
     'matrix-transport.host-status-gates-status.get-1': 'result-absent-settlement',

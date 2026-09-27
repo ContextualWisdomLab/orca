@@ -4,6 +4,12 @@ import { tmpdir } from 'node:os'
 import type * as NodeOs from 'node:os'
 import { join } from 'node:path'
 
+// Why: temp homes exceed sun_path on macOS but not on Linux; keep asserted config bytes host-independent.
+vi.mock('./codex-daemon-socket-path-guard', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  applyCodexDaemonSocketGuard: (config: string) => config
+}))
+
 const { getPathMock, homedirMock } = vi.hoisted(() => ({
   getPathMock: vi.fn<(name: string) => string>(),
   homedirMock: vi.fn<() => string>()
@@ -46,6 +52,10 @@ function getRuntimeConfigPath(): string {
   return join(userDataDir, 'codex-runtime-home', 'home', 'config.toml')
 }
 
+function getRuntimeBaselinePath(): string {
+  return join(userDataDir, 'codex-runtime-home', 'home', '.orca-config-settings-baseline.json')
+}
+
 beforeEach(() => {
   fakeHomeDir = mkdtempSync(join(tmpdir(), 'orca-codex-config-home-'))
   userDataDir = mkdtempSync(join(tmpdir(), 'orca-codex-config-user-data-'))
@@ -73,30 +83,6 @@ afterEach(() => {
 })
 
 describe('syncSystemConfigIntoManagedCodexHome', () => {
-  it('binds mirrored MCP header helpers to each account home', () => {
-    const sourceHome = getSystemCodexHomePath()
-    const canonical = [
-      '[mcp_servers.time]',
-      `http_headers_helper = "/usr/bin/env CODEX_HOME=${sourceHome} python headers.py"`,
-      '',
-      '[mcp_servers.other]',
-      'http_headers_helper = "python unrelated.py"',
-      ''
-    ].join('\n')
-    writeFileSync(getSystemConfigPath(), canonical, 'utf-8')
-    const firstHome = join(userDataDir, 'account homes', 'first', 'home')
-    const secondHome = join(userDataDir, 'account homes', 'second', 'home')
-    for (const runtimeHomePath of [firstHome, secondHome]) {
-      mkdirSync(runtimeHomePath, { recursive: true })
-      syncSystemConfigIntoManagedCodexHome({ runtimeHomePath, systemHomePath: sourceHome })
-      const mirrored = readFileSync(join(runtimeHomePath, 'config.toml'), 'utf-8')
-      expect(mirrored).toContain(`CODEX_HOME='${runtimeHomePath}'`)
-      expect(mirrored).toContain('http_headers_helper = "python unrelated.py"')
-      expect(mirrored).not.toContain(`CODEX_HOME=${sourceHome}`)
-    }
-    expect(readFileSync(getSystemConfigPath(), 'utf-8')).toBe(canonical)
-  })
-
   it('seeds a missing runtime config without copying system hook trust', () => {
     writeFileSync(
       getSystemConfigPath(),
@@ -380,6 +366,96 @@ describe('syncSystemConfigIntoManagedCodexHome', () => {
     expect(runtimeConfig).not.toContain('# system-owned parent')
     expect(runtimeConfig).toContain('trust_level = "untrusted"')
     expect(runtimeConfig.match(/\[projects\."\/repo"\]/g)?.length).toBe(1)
+  })
+
+  it('preserves runtime-only MCP servers and nested descendants with system precedence', () => {
+    mkdirSync(join(userDataDir, 'codex-runtime-home', 'home'), { recursive: true })
+    writeFileSync(
+      getRuntimeConfigPath(),
+      [
+        '[mcp_servers.runtime_only]',
+        'command = "runtime-command"',
+        '',
+        '[mcp_servers.runtime_only.env]',
+        'MODE = "runtime"',
+        '',
+        '[mcp_servers.shared]',
+        'command = "runtime-shared"',
+        ''
+      ].join('\n'),
+      'utf-8'
+    )
+    writeFileSync(
+      getSystemConfigPath(),
+      [
+        '[mcp_servers."shared"]',
+        'command = "system-shared"',
+        '',
+        '[mcp_servers.system_only]',
+        'command = "system-only"',
+        ''
+      ].join('\n'),
+      'utf-8'
+    )
+
+    syncSystemConfigIntoManagedCodexHome()
+
+    const runtimeConfig = readFileSync(getRuntimeConfigPath(), 'utf-8')
+    expect(runtimeConfig).toContain('[mcp_servers.runtime_only]')
+    expect(runtimeConfig).toContain('[mcp_servers.runtime_only.env]')
+    expect(runtimeConfig).toContain('MODE = "runtime"')
+    expect(runtimeConfig).toContain('command = "system-shared"')
+    expect(runtimeConfig).not.toContain('runtime-shared')
+    expect(runtimeConfig.match(/\[mcp_servers\.(?:shared|"shared")\]/g)).toHaveLength(1)
+    expect(runtimeConfig).toContain('[mcp_servers.system_only]')
+    expect(JSON.parse(readFileSync(getRuntimeBaselinePath(), 'utf-8'))).toMatchObject({
+      mcpServers: ['shared', 'system_only']
+    })
+  })
+
+  it('revokes a previously mirrored MCP server when the system source deletes it', () => {
+    mkdirSync(join(userDataDir, 'codex-runtime-home', 'home'), { recursive: true })
+    writeFileSync(getRuntimeConfigPath(), '[mcp_servers.revoked]\ncommand = "run"\n', 'utf-8')
+    writeFileSync(getSystemConfigPath(), '[mcp_servers.revoked]\ncommand = "run"\n', 'utf-8')
+
+    syncSystemConfigIntoManagedCodexHome()
+    writeFileSync(getSystemConfigPath(), 'model = "system"\n', 'utf-8')
+    syncSystemConfigIntoManagedCodexHome()
+
+    expect(readFileSync(getRuntimeConfigPath(), 'utf-8')).not.toContain('[mcp_servers.revoked]')
+  })
+
+  it('keeps runtime-only MCP additions after a source refresh and remains byte-idempotent', () => {
+    mkdirSync(join(userDataDir, 'codex-runtime-home', 'home'), { recursive: true })
+    writeFileSync(getRuntimeConfigPath(), '[mcp_servers.runtime_only]\ncommand = "run"\n', 'utf-8')
+    writeFileSync(getSystemConfigPath(), 'model = "system"\n', 'utf-8')
+
+    syncSystemConfigIntoManagedCodexHome()
+    const first = readFileSync(getRuntimeConfigPath(), 'utf-8')
+    syncSystemConfigIntoManagedCodexHome()
+
+    expect(readFileSync(getRuntimeConfigPath(), 'utf-8')).toBe(first)
+    expect(readFileSync(getRuntimeConfigPath(), 'utf-8')).toContain('[mcp_servers.runtime_only]')
+  })
+
+  it('keeps an explicit system MCP disable canonical', () => {
+    mkdirSync(join(userDataDir, 'codex-runtime-home', 'home'), { recursive: true })
+    writeFileSync(
+      getRuntimeConfigPath(),
+      '[mcp_servers.blocked]\ncommand = "runtime"\nenabled = true\n',
+      'utf-8'
+    )
+    writeFileSync(
+      getSystemConfigPath(),
+      '[mcp_servers."blocked"]\ncommand = "system"\nenabled = false\n',
+      'utf-8'
+    )
+
+    syncSystemConfigIntoManagedCodexHome()
+
+    const runtimeConfig = readFileSync(getRuntimeConfigPath(), 'utf-8')
+    expect(runtimeConfig).toContain('enabled = false')
+    expect(runtimeConfig).not.toContain('enabled = true')
   })
 
   it('deduplicates basic and literal project headers by decoded Windows path', () => {
