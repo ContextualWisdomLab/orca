@@ -138,7 +138,9 @@ export class RuntimeTerminalWait {
         if (effectiveTimeoutMs > 0) {
           waiter.timeout = setTimeout(() => {
             this.waiters.remove(waiter)
-            reject(createTerminalWaitTimeoutError(this.deps.getLivePty(handle)?.pty.connected === true))
+            reject(
+              createTerminalWaitTimeoutError(this.deps.getLivePty(handle)?.pty.connected === true)
+            )
           }, effectiveTimeoutMs)
         }
         this.waiters.add(waiter)
