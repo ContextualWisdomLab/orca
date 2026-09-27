@@ -30,6 +30,7 @@ export function HostScreenHeader({ controller }: { controller: HostScreenControl
     floatingWorkspaceEnabled,
     forceReconnectHost,
     hostId,
+    hostDisplay,
     lastConnectedAt,
     onHideSidebar,
     reconnectAttempts,
@@ -61,24 +62,38 @@ export function HostScreenHeader({ controller }: { controller: HostScreenControl
           return (
             <>
               <View style={styles.hostIdentity}>
-                <StatusDot state={connState} verdict={headerVerdict} />
-                <Text style={styles.hostNameText} numberOfLines={1}>
-                  {state.hostName || 'Host'}
-                </Text>
+                <View style={styles.hostIdentityLine}>
+                  <StatusDot state={connState} verdict={headerVerdict} />
+                  <Text style={styles.hostNameText} numberOfLines={1}>
+                    {hostDisplay.title}
+                  </Text>
+                </View>
+                {hostDisplay.descriptorLine ? (
+                  <Text style={styles.hostPlatformText} numberOfLines={1}>
+                    {hostDisplay.descriptorLine}
+                  </Text>
+                ) : null}
               </View>
               {connState !== 'connected' &&
                 (() => {
                   // Why: auth-failed has its own banner, so suppress the Reconnect button for that verdict.
                   const verdict = headerVerdict
                   const isError = isErrorVerdict(verdict)
-                  const showReconnectButton = isError && hostId && verdict.kind !== 'auth-failed'
-                  if (!showReconnectButton) {
+                  // Null on the page, where the shell owns the connection and nothing here re-dials.
+                  if (
+                    !isError ||
+                    !hostId ||
+                    verdict.kind === 'auth-failed' ||
+                    forceReconnectHost === null
+                  ) {
                     return null
                   }
                   return (
                     <Pressable
                       style={styles.reconnectButton}
-                      onPress={() => void forceReconnectHost(hostId!)}
+                      onPress={() => void forceReconnectHost(hostId)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Reconnect"
                       hitSlop={8}
                     >
                       <Text style={styles.reconnectButtonText}>Reconnect</Text>
@@ -267,6 +282,8 @@ export function HostScreenHeader({ controller }: { controller: HostScreenControl
           <Pressable
             style={[styles.filterChip, settings.activeFilterCount > 0 && styles.filterChipActive]}
             onPress={() => state.setShowFilterModal(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`Filter workspaces${settings.activeFilterCount > 0 ? `, ${settings.activeFilterCount} active` : ''}`}
           >
             <Filter
               size={12}
@@ -282,14 +299,24 @@ export function HostScreenHeader({ controller }: { controller: HostScreenControl
             </Text>
           </Pressable>
 
-          <Pressable style={styles.modeButton} onPress={() => state.setShowSortPicker(true)}>
+          <Pressable
+            style={styles.modeButton}
+            onPress={() => state.setShowSortPicker(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`Sort by ${settings.selectedSortLabel}`}
+          >
             <SlidersHorizontal size={14} color={colors.textSecondary} />
             <Text style={styles.sortLabel} numberOfLines={1}>
               {settings.selectedSortLabel}
             </Text>
           </Pressable>
 
-          <Pressable style={styles.modeButton} onPress={() => state.setShowGroupPicker(true)}>
+          <Pressable
+            style={styles.modeButton}
+            onPress={() => state.setShowGroupPicker(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Group workspaces"
+          >
             <Layers size={14} color={colors.textSecondary} />
             <Text style={styles.sortLabel} numberOfLines={1}>
               {state.groupMode === 'none'
@@ -310,6 +337,8 @@ export function HostScreenHeader({ controller }: { controller: HostScreenControl
               actions.navigateFromHostList(`/h/${encodeURIComponent(hostId)}/accounts`)
             }
             disabled={connState !== 'connected'}
+            accessibilityRole="button"
+            accessibilityLabel="Accounts"
           >
             <UserCircle
               size={16}
@@ -321,6 +350,8 @@ export function HostScreenHeader({ controller }: { controller: HostScreenControl
             style={styles.searchToggle}
             onPress={() => actions.navigateFromHostList(`/h/${encodeURIComponent(hostId)}/tasks`)}
             disabled={connState !== 'connected'}
+            accessibilityRole="button"
+            accessibilityLabel="Tasks"
           >
             <List
               size={16}
@@ -328,7 +359,12 @@ export function HostScreenHeader({ controller }: { controller: HostScreenControl
             />
           </Pressable>
 
-          <Pressable style={styles.searchToggle} onPress={() => state.setShowSearch((s) => !s)}>
+          <Pressable
+            style={styles.searchToggle}
+            onPress={() => state.setShowSearch((s) => !s)}
+            accessibilityRole="button"
+            accessibilityLabel={state.showSearch ? 'Close search' : 'Search workspaces'}
+          >
             {state.showSearch ? (
               <X size={16} color={colors.textSecondary} />
             ) : (

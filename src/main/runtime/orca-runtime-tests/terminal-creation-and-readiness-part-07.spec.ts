@@ -1,21 +1,28 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   AGENT_PROMPT_BRACKETED_PASTE_END,
   AGENT_PROMPT_BRACKETED_PASTE_START,
   buildAgentPromptPasteBytes,
-  getAgentPromptSubmitDelayMs
+  resolveAgentPromptSubmitDelayForAgent
 } from '../../../shared/agent-prompt-injection'
 import { TUI_AGENT_CONFIG } from '../../../shared/tui-agent-config'
+import { ORCA_DISPATCH_PROMPT_LEAD_LINE } from '../../../shared/orca-dispatch-status-prompt'
 import type { TuiAgent } from '../../../shared/tui-agent'
 import { OrcaRuntimeService } from '../orca-runtime'
 import { acknowledgeAgentPromptSubmit } from '../orca-runtime-test-mocks.spec'
 import {
   TEST_WORKTREE_PATH,
-  antigravityReadyScreen,
   cursorBusyScreen,
   cursorReadyScreen,
   store
 } from '../orca-runtime-test-fixtures.spec'
+
+const antigravityCapturedReady = readFileSync(
+  join(__dirname, '..', '__fixtures__', 'antigravity-ready-default-127.txt'),
+  'utf8'
+)
 
 describe('OrcaRuntimeService', () => {
   it('resolves tui-idle from a Codex ready prompt even when stale startup lines remain', async () => {
@@ -64,19 +71,20 @@ describe('OrcaRuntimeService', () => {
       getForegroundProcess: async () => null
     })
     const { handle } = await runtime.createTerminal(`path:${TEST_WORKTREE_PATH}`)
+    runtime.seedHeadlessTerminal('pty-bg', '\x1b[0m', { cols: 120, rows: 40 })
     runtime.onPtyData(
       'pty-bg',
       [
         'Do you trust this workspace directory?\n',
         'Press t to trust\n',
-        antigravityReadyScreen(),
+        antigravityCapturedReady,
         '\n'
       ].join(''),
       Date.now()
     )
 
     await expect(
-      runtime.waitForTerminal(handle, { condition: 'tui-idle', timeoutMs: 1_000 })
+      runtime.waitForTerminal(handle, { condition: 'tui-idle', timeoutMs: 3_500 })
     ).resolves.toMatchObject({
       handle,
       condition: 'tui-idle',
@@ -509,6 +517,46 @@ describe('OrcaRuntimeService', () => {
     }
   })
 
+  it.each([
+    ['claude', true],
+    ['an unknown agent', true],
+    ['codex', false]
+  ] as const)('types the lead line for %s: %s', async (agent, typesLead) => {
+    vi.useFakeTimers()
+    try {
+      const writes: string[] = []
+      const runtime = new OrcaRuntimeService(store)
+      runtime.setPtyController({
+        spawn: vi.fn().mockResolvedValue({ id: 'pty-bg' }),
+        write: (_ptyId, data) => {
+          writes.push(data)
+          acknowledgeAgentPromptSubmit(runtime, 'pty-bg', data)
+          return true
+        },
+        kill: () => true,
+        getForegroundProcess: async () => null
+      })
+      const { handle } = await runtime.createTerminal(
+        `path:${TEST_WORKTREE_PATH}`,
+        agent === 'an unknown agent' ? undefined : { launchAgent: agent }
+      )
+
+      const sendPromise = runtime.sendTerminalAgentPrompt(handle, 'the brief', {
+        leadLine: ORCA_DISPATCH_PROMPT_LEAD_LINE
+      })
+      await vi.runAllTimersAsync()
+      await sendPromise
+
+      const paste = buildAgentPromptPasteBytes('the brief')
+      expect(writes).toEqual([
+        typesLead ? `${ORCA_DISPATCH_PROMPT_LEAD_LINE} ${paste}` : paste,
+        '\r'
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it.each(['claude', 'codex'] as const)(
     'waits for %s composer output frames to settle before one submit',
     async (agent) => {
@@ -610,9 +658,13 @@ describe('OrcaRuntimeService', () => {
         launchAgent: agent
       })
 
-      const submitDelayMs = getAgentPromptSubmitDelayMs(
+      // The agent's own policy, not the byte-only delay: antigravity adds a per-line settle
+      // (#21665), and advancing fake timers by less than the policy waits leaves the submit
+      // pending until the real 30 s timeout.
+      const submitDelayMs = resolveAgentPromptSubmitDelayForAgent(
         process.platform,
-        Buffer.byteLength(buildAgentPromptPasteBytes('review this change'), 'utf8')
+        'review this change',
+        agent
       )
       const sendPromise = runtime.sendTerminalAgentPrompt(handle, 'review this change')
       if (agent === 'omp') {

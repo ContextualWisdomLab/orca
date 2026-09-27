@@ -1,5 +1,93 @@
 # Antigravity readiness: what the transcripts show
 
+## 2026-09-19: CI replay corrections
+
+The full runtime suite still expected the old hand-written bare-caret screens to
+be ready. It now replays the recorded 1.2.7 screen at 120×40, including the
+background-handle, live-leaf, retained-trust-text and large retained-tail paths.
+The waits allow 3.5 seconds so the 2-second idle poll can observe the asynchronous
+screen projection. The no-whole-tail-split performance assertion remains.
+
+The older API-key, hidden-account and dismissed-dialog captures include shutdown.
+Their unique `ESC[>4m ESC[=0;1u` trailer resets keyboard modes, moves down and clears
+the shortcut footer with `ESC[J`; the dismissed dialog also prints a resume
+command. Their live-phase tests stop before that recorded trailer. Full-file
+screen checks require **not ready** after the footer is erased. No capture bytes
+were edited and no production readiness condition was relaxed.
+
+The transcript suite now asserts the intended verdict directly, including rejecting
+the model picker, instead of preserving historical defects as inverted expectations.
+
+
+## 2026-09-19: host contact and live prompt submission
+
+A regression marked an SSH terminal `unverifiable` after caching a ready screen.
+The wait incorrectly returned ready. Readiness now refuses that cached verdict
+while host contact is unverifiable, and the adopted-screen fallback rechecks
+liveness when an outstanding snapshot completes. Both cases pass runtime tests;
+this is simulated host loss, not a claim of real SSH validation. Reconnection
+snapshot freshness remains a separate validation task.
+
+In the hidden app, a real `terminal.send` with text plus Enter submitted a harmless
+prompt to installed agy. The rendered request failed with HTTP 401 and
+`ACCESS_TOKEN_TYPE_UNSUPPORTED`; the subsequent empty composer satisfied the
+readiness wait. The public RPC's guarded prompt route is limited to Claude/Codex,
+so this agy check proves ordinary input delivery, not guarded worker submission.
+
+## 2026-09-19: ordinary wait and delivery integration
+
+The ordinary wait paths now consult the same current-screen classifier for
+Antigravity, including immediate checks, polling, title callbacks and the queued
+message delivery gate. Snapshot reads reuse the execution host's existing terminal
+model/provider path and pending-read deduplication. Cached screens are rejected
+after output, process generation changes or queued headless reflow/writes.
+
+A hidden rebuilt Orca with installed agy reproduced the previous failure: an empty
+composer reported the dismissed trust prompt, then timed out after an app restart.
+With this integration, the same daemon terminal returns ready. Typing the exact
+Plan placeholder makes the wait time out; clearing it returns ready again. Screenshots
+and wait results were inspected together. No model generation was needed for this
+check; successful authenticated worker turns remain unverified.
+
+Runtime tests replay recorded output through the normal wait path, exercise a
+trust dialog before its recorded alternate-screen teardown, then replay the ready
+screen. They also cover drafts, working output, cache invalidation on new output
+and reflow, and queued delivery retry after a draft becomes empty. Narrow/wrapped
+layouts and absent banners remain unrecognized rather than claimed ready. Real
+SSH/Windows execution and disconnect freshness still require validation.
+
+## 2026-09-19: live 1.2.7 mode captures and visible-screen fallback
+
+New recordings under `src/main/runtime/__fixtures__/`:
+
+- `antigravity-ready-default-127.txt`: empty default-mode composer.
+- `antigravity-ready-plan-127.txt`: empty composer displaying
+  `> Plan mode: research & plan only (shift+tab to cycle)`.
+- `antigravity-ready-accept-edits-127.txt`: empty composer displaying
+  `> Accept-edits mode: file edits auto-approved (shift+tab to cycle)`.
+- `antigravity-plan-hint-as-draft-127.txt`: the exact plan placeholder text typed
+  as a real, unsubmitted draft.
+
+The ready and typed plan rows have identical text and styling. Their footers differ:
+the empty composer shows `? for shortcuts`; a typed draft removes it. The captured
+working screen instead shows `esc to cancel`. A bare-caret requirement alone would
+reject both empty mode composers. Matching the placeholder text alone would accept
+the user's draft. The installed binary reports version `1.2.1`, but its banner is
+`1.2.7`; these recordings identify the banner version.
+
+`terminal-screen-readiness.ts` now checks the complete visible composer frame and
+shortcut footer, and rejects separately projected draft text. The adopted-terminal
+visible-screen fallback uses it. Captured-screen tests and runtime fallback tests
+cover ready, working, dialog, and draft cases, including mocked SSH snapshots.
+
+**This was initially a fallback-only fix.** The ordinary integration above now
+bypasses the defective retained-output matcher for recognized Antigravity panes. Narrow wrapping, a scrolled-away banner, and older layouts
+without the shortcut footer require further evidence and integration. The older
+`antigravity-composer-multiline-unsent.txt` recording was reused from PR #20027 with
+its original metadata; it was not recaptured on 1.2.7.
+
+## Earlier investigation (1.2.0)
+
 `findAntigravityReadyPromptIndex` in `src/main/runtime/terminal-wait-detection.ts` decides whether
 an Antigravity pane is ready for a prompt. It has been written five times, each version tuned
 against a five-line screen typed from memory into a `.spec.ts` fixture. Three of the first four
@@ -10,10 +98,10 @@ Real transcripts now exist. They were recorded from a live `agy` on macOS with
 `src/main/runtime/__fixtures__/`. `src/main/runtime/antigravity-readiness-transcripts.test.ts`
 replays them through the runtime.
 
-**Headline: on real output the current detector is inverted.** It refuses a genuinely ready screen
-and accepts a live model picker. The five attempts argued about which extra condition to add; none
-of them had noticed that the condition they all shared — a line beginning with the model name —
-never matches a real Antigravity ready screen at all.
+**Headline: the captured ready screen needs a bare-caret rule, and an active model picker must veto
+that stale caret.** The earlier detector refused the genuine ready screen and accepted a live model
+picker. The shipped attempt-six rule accepts the bare composer caret, while the active-picker guard
+keeps a retained caret from satisfying `tui-idle` until `/model` exits.
 
 ## Versions
 
@@ -68,19 +156,20 @@ painted **on the same physical lines as the logo**. What Orca derives is:
 ▄▀▀    ▀▀▄     ~
 ```
 
-The detector requires `normalized.startsWith('gemini', trimmedStart)` on a trimmed line. The
-trimmed line starts with `▀`. It never matches. Measured three ways on the real screen:
+The earlier detector required `normalized.startsWith('gemini', trimmedStart)` on a trimmed line. The
+trimmed line starts with `▀`, so that rule never matched. The shipped detector uses the bare
+composer caret instead. Measured three ways on the real screen:
 
 | Input                                                  | `isKnownReadyPromptPreview` |
 | ------------------------------------------------------ | --------------------------- |
-| Real ready screen                                      | `false`                     |
+| Real ready screen                                      | `true`                      |
 | The same screen with the logo glyphs stripped          | `true`                      |
-| Real ready screen followed by the live `/model` picker | `true`                      |
+| Real ready screen followed by the live `/model` picker | `false`                     |
 
-So the logo — decoration, and suppressible with `AGY_CLI_HIDE_LOGO` — is what decides readiness
-today, and the live dialog is what supplies the model line the ready screen could not.
+So the logo — decoration, and suppressible with `AGY_CLI_HIDE_LOGO` — no longer decides readiness,
+and the live dialog cannot reuse the stale composer caret as a ready signal.
 
-### 2. The dialog is what satisfies the model rule
+### 2. The dialog used to satisfy the model rule
 
 `/model` prints its options one per line:
 
@@ -91,9 +180,9 @@ Gemini 3.1 Pro
 ```
 
 Those lines _do_ begin with `Gemini`, and a bare `>` composer line sits earlier in the same tail
-from before the picker opened. Both halves of the rule are satisfied **while a dialog owns the
-screen**, and the pane reads ready. This is the false-ready hazard the last three attempts were
-each trying to close, reproduced from a real capture.
+from before the picker opened. Both halves of the old rule were satisfied **while a dialog owned the
+screen**, and the pane read ready. The shipped detector now recognizes the active `Switch Model`
+surface and rejects that stale caret until it sees `Exited /model command`.
 
 ### 3. `>` is the dialog selection marker, not only the composer caret
 
@@ -233,29 +322,32 @@ expressed against the model/caret positions, which is what 1.2 and 1.3b just inv
 | X4  | Banner-to-caret distance                                   | ~8 derived lines on a 120x40 PTY; the banner falls outside the 6-line preview window, so only the full retained tail can see it |
 | X5  | Pane title on the trust screen versus ready                | Identical: none                                                                                                                 |
 
-## Can attempt six be written?
+## Attempt six is shipped
 
 Yes — but not as a variation on any of the five. Every one of them refined a predicate over
 `\n`-delimited lines, and that is the layer where the evidence says the information is not.
 
-What the captures support:
+What the captures support and the shipped detector now does:
 
 - **The one stable, dialog-free ready marker is a line whose entire trimmed content is `>`.** It is
   present in every ready capture and absent from every dialog capture, because a dialog's `>` always
   carries its selected row's label. This is a much narrower rule than any attempt used, and it is
   the only one that survived contact with the transcripts.
-- **Drop the model-row requirement.** It matches dialogs and not ready screens. Keeping it inverted
-  the detector.
+- **Drop the model-row requirement.** The model rows match dialogs and not the ready screen, so
+  keeping that requirement inverted the detector.
 - **Do not require an account row.** It is optional by environment variable and carries no email for
   API-key users.
+- **Veto an active model picker.** `Switch Model` followed by a labeled selection row means the
+  bare caret belongs to the composer behind the picker; readiness resumes after `Exited /model
+command`.
 - **Do not anchor on `headerIndex`.** The banner is printed once and never reprinted.
 - **The blocked-signal path already works** for the trust dialog: `antigravity-dialog-trust-workspace.txt`
   is correctly refused today, by wording, not by structure.
 
-What is still unknown and should be captured before shipping: the sign-in, theme, privacy and
-update dialogs, and any ready screen where the composer is not idle (accept-edits and plan mode,
-which PRs #15840 and #15852 describe from a screenshot). A bare-`>` rule is only as good as the
-claim that those modes still end on a bare `>`; that claim is untested.
+What is still unknown and should be captured: the sign-in, theme, privacy and update dialogs, and
+any ready screen where the composer is not idle (accept-edits and plan mode, which PRs #15840 and
+#15852 describe from a screenshot). A bare-`>` rule is only as good as the claim that those modes
+still end on a bare `>`; that claim is untested.
 
 The honest summary is that this is a screen-shaped problem being solved with line-shaped tools. A
 rule over the derived tail can be made much better than what ships today, but the durable fix is to

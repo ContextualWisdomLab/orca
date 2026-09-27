@@ -24,7 +24,6 @@ import {
   RUNTIME_GRAPH_RELOAD_TIMEOUT_MS,
   RuntimeGraphReloadLifecycle
 } from './runtime-graph-reload-lifecycle'
-import { RendererPublicationThrottle } from '../window/renderer-publication-throttle'
 import { ClientHostedPageReconciliationWindow } from './client-hosted-page-reconciliation-window'
 import { ClientSessionTabSelectionStore } from './client-session-tab-selection'
 import { WorktreeTerminalMutationLock } from './worktree-terminal-mutation-lock'
@@ -92,9 +91,6 @@ export class OrcaRuntimeWithRuntimeId {
     },
     onTimeout: (_revision, windowId) => this.handleGraphReloadTimeout(windowId)
   })
-
-  // Why: paired graph transactions need foreground timer cadence only until their publication settles.
-  protected readonly rendererPublicationThrottle = new RendererPublicationThrottle()
 
   protected tabs = new Map<string, RuntimeSyncedTab>()
 
@@ -326,10 +322,12 @@ export class OrcaRuntimeWithRuntimeId {
 
   protected readonly terminalWriter = new RuntimeTerminalWriter(
     (ptyId, data) => this.ptyController?.write(ptyId, data) ?? false,
-    (ptyId) => this.getPtyWriteHostPlatform(ptyId)
+    (ptyId) => this.getPtyWriteHostPlatform(ptyId),
+    (ptyId) => this.getPtyAgent(ptyId)
   )
 
   protected readonly terminalIdlePolls = new RuntimeTerminalIdlePolls({
+    getScreenReadiness: (ptyId, text) => this.getTerminalScreenReadiness(ptyId, text),
     intervalMs: TUI_IDLE_POLL_INTERVAL_MS,
     quiescenceMs: TUI_IDLE_QUIESCENCE_MS,
     getTabTitle: (tabId) => this.tabs.get(tabId)?.title ?? null,
@@ -344,6 +342,7 @@ export class OrcaRuntimeWithRuntimeId {
 
   protected readonly terminalWait = new RuntimeTerminalWaitController(
     {
+      getScreenReadiness: (ptyId, text) => this.getTerminalScreenReadiness(ptyId, text),
       defaultTimeoutMs: TUI_IDLE_DEFAULT_TIMEOUT_MS,
       getLivePty: (handle) => this.getLivePtyForHandle(handle),
       getLiveLeaf: (handle) => this.getLiveLeafForHandle(handle),
@@ -353,8 +352,8 @@ export class OrcaRuntimeWithRuntimeId {
       getPaneAgent: (ptyId) => this.getPaneAgentForTuiIdle(ptyId),
       getFirstPartyAgentStatus: (ptyId) =>
         (ptyId ? this.ptysById.get(ptyId)?.lastExplicitAgentStatus : null) ?? null,
-      startVisibleReadProbe: (waiter, waiterTimeoutMs) =>
-        this.startTuiIdleVisibleReadProbe(waiter, waiterTimeoutMs)
+      startVisibleReadProbe: (waiter, waiterTimeoutMs, agent) =>
+        this.startTuiIdleVisibleReadProbe(waiter, waiterTimeoutMs, agent)
     },
     this.terminalWaiters,
     this.terminalIdlePolls

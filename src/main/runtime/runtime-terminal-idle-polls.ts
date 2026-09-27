@@ -1,8 +1,10 @@
+import type { ReadTerminalScreenReadiness } from './terminal-screen-readiness'
 import { isShellProcess, type AgentStatus } from '../../shared/agent-detection'
 import type { RuntimeTerminalWait } from '../../shared/runtime-types'
 import {
   detectTerminalWaitBlockedReason,
-  isKnownReadyPromptPreview
+  isKnownReadyPromptPreview,
+  isMuseReadyPromptPreview
 } from './terminal-wait-detection'
 import {
   buildPtyTerminalWaitBlockedResult,
@@ -34,6 +36,7 @@ import type { TerminalWaiter } from './runtime-terminal-contracts'
 import type { RuntimeLeafRecord, RuntimePtyWorktreeRecord } from './runtime-terminal-state-records'
 
 type RuntimeTerminalIdlePollDependencies = {
+  getScreenReadiness?: ReadTerminalScreenReadiness
   intervalMs: number
   quiescenceMs: number
   getTabTitle(tabId: string): string | null
@@ -114,7 +117,10 @@ export class RuntimeTerminalIdlePolls {
     let startedForegroundPoll = false
     try {
       const waitText = buildTerminalWaitText(leaf.tailBuffer, leaf.tailPartialLine, leaf.preview)
-      const blockedReason = detectTerminalWaitBlockedReason(waitText)
+      const screen = this.deps.getScreenReadiness?.(leaf.ptyId, waitText)
+      const blockedReason = screen
+        ? screen.blockedReason
+        : detectTerminalWaitBlockedReason(waitText)
       if (blockedReason) {
         this.stop(entry)
         this.deps.resolve(
@@ -124,17 +130,23 @@ export class RuntimeTerminalIdlePolls {
         return
       }
       if (
-        isTuiIdleSatisfied({
-          record: leaf,
-          rendererTitle: leaf.paneTitle ?? this.deps.getTabTitle(leaf.tabId),
-          readPositiveBodyEvidence: () => isKnownReadyPromptPreview(waitText),
-          agent,
-          firstPartyStatus: this.deps.getFirstPartyAgentStatus(leaf.ptyId),
-          quiescenceMs: this.deps.quiescenceMs
-        })
+        screen
+          ? screen.ready
+          : isTuiIdleSatisfied({
+              record: leaf,
+              rendererTitle: leaf.paneTitle ?? this.deps.getTabTitle(leaf.tabId),
+              readPositiveBodyEvidence: () => isKnownReadyPromptPreview(waitText),
+              readMuseReadyBodyEvidence: () => isMuseReadyPromptPreview(waitText),
+              agent,
+              firstPartyStatus: this.deps.getFirstPartyAgentStatus(leaf.ptyId),
+              quiescenceMs: this.deps.quiescenceMs
+            })
       ) {
         this.stop(entry)
         this.deps.resolve(waiter, buildTerminalWaitResult(waiter.handle, 'tui-idle', leaf))
+        return
+      }
+      if (screen) {
         return
       }
       if (
@@ -180,7 +192,10 @@ export class RuntimeTerminalIdlePolls {
     let startedForegroundPoll = false
     try {
       const waitText = buildTerminalWaitText(pty.tailBuffer, pty.tailPartialLine, pty.preview)
-      const blockedReason = detectTerminalWaitBlockedReason(waitText)
+      const screen = this.deps.getScreenReadiness?.(pty.ptyId, waitText)
+      const blockedReason = screen
+        ? screen.blockedReason
+        : detectTerminalWaitBlockedReason(waitText)
       if (blockedReason) {
         this.stop(entry)
         this.deps.resolve(
@@ -190,18 +205,24 @@ export class RuntimeTerminalIdlePolls {
         return
       }
       if (
-        isTuiIdleSatisfied({
-          record: pty,
-          readPositiveBodyEvidence: () =>
-            this.deps.getAdoptedPtyIdleStatus(pty) === 'idle' ||
-            isKnownReadyPromptPreview(waitText),
-          agent,
-          firstPartyStatus: this.deps.getFirstPartyAgentStatus(pty.ptyId),
-          quiescenceMs: this.deps.quiescenceMs
-        })
+        screen
+          ? screen.ready
+          : isTuiIdleSatisfied({
+              record: pty,
+              readPositiveBodyEvidence: () =>
+                this.deps.getAdoptedPtyIdleStatus(pty) === 'idle' ||
+                isKnownReadyPromptPreview(waitText),
+              readMuseReadyBodyEvidence: () => isMuseReadyPromptPreview(waitText),
+              agent,
+              firstPartyStatus: this.deps.getFirstPartyAgentStatus(pty.ptyId),
+              quiescenceMs: this.deps.quiescenceMs
+            })
       ) {
         this.stop(entry)
         this.deps.resolve(waiter, buildPtyTerminalWaitResult(waiter.handle, 'tui-idle', pty))
+        return
+      }
+      if (screen) {
         return
       }
       if (
